@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { brl, gramas, duracao, numeroOrc, segundaDaSemana } from '../app/js/formato.js';
+import { brl, gramas, duracao, numeroOrc, segundaDaSemana, hojeISO, inicioDoMesISO } from '../app/js/formato.js';
 import { traduzirErro } from '../app/js/erros.js';
 
 const nb = (s) => s.replace(/ /g, ' ');
@@ -55,4 +55,11 @@ test('sessão expirada', () => {
 
 test('erro desconhecido não mostra jargão', () => {
   assert.equal(traduzirErro({ code: 'XX000', message: 'internal error at line 4' }), 'Algo deu errado. Tente de novo; se continuar, avise o Marcos.');
+});
+
+test('hojeISO usa a data local, não a de Londres', () => {
+  const noite = new Date(2026, 9, 19, 22, 30); // 19/10 22h30 no horário local
+  assert.equal(hojeISO(noite), '2026-10-19');
+  assert.equal(hojeISO(noite, 7), '2026-10-26');
+  assert.equal(inicioDoMesISO(noite), '2026-10-01');
 });

@@ -24,3 +24,11 @@ export function segundaDaSemana(data = new Date()) {
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// Data local (do aparelho) em AAAA-MM-DD, com dias a somar. Não usar toISOString(): ele converte para UTC.
+export function hojeISO(base = new Date(), somarDias = 0) {
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + somarDias);
+  return iso(d);
+}
+export const inicioDoMesISO = (base = new Date()) => iso(new Date(base.getFullYear(), base.getMonth(), 1));

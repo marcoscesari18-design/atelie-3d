@@ -67,10 +67,11 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
 .item .titulo { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .meta { color: var(--dim); font-size: 13px; }
 .item .valor { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 8px; }
+@media (min-width: 640px) { .kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
 .kpi { background: var(--card); border: 1px solid var(--linha-suave); border-radius: var(--raio); padding: 12px 14px; }
 .kpi .rot { color: var(--dim); font-size: 13px; }
-.kpi .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 700; }
+.kpi .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 700; white-space: nowrap; }
 .linha-dado { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--linha-suave); font-size: 15px; }
 .linha-dado:last-child { border-bottom: 0; }
 .linha-dado .v { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
@@ -200,3 +201,8 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
 .licao { padding: 8px 0; border-bottom: 1px solid var(--linha-suave); }
 .licao:last-child { border-bottom: 0; }
 .licao p { margin: 4px 0; }
+
+/* ---------- vendas ---------- */
+.venda.cancelada { opacity: .55; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 500; }
+.check input { width: 22px; height: 22px; accent-color: var(--acento); }

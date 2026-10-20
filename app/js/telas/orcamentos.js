@@ -1,7 +1,7 @@
 // 🧾 Orçamentos — sobe o .3mf, confere rolos, define preço, gera PDF e aprova.
 // Aprovar = vira venda + tarefas na Semana e as gramas saem do estoque (no banco, numa transação).
 import { h, limpar, vazio, erroTela, avisar, dialogo, campo, confirmar, botao, corBolinha } from '../ui.js';
-import { brl, gramas, duracao, numeroOrc } from '../formato.js';
+import { brl, gramas, duracao, numeroOrc, hojeISO } from '../formato.js';
 import { ler3mf, Erro3mf } from '../le3mf.js';
 import { impressaoDe3mf, calcularRascunho, problemas, resumoBaixa, linhasParaBanco, rascunhoDoBanco } from '../orcamento.js';
 import { gerarPdfOrcamento } from '../pdf.js';
@@ -397,8 +397,8 @@ async function pdf(est) {
   const calc = calcularRascunho(r, apoio.rolos, apoio.params);
   let logo = null;
   if (apoio.marca.logo_path) { const f = await ctx.db.foto(apoio.marca.logo_path); if (f.dados) logo = await reduzirFoto(f.dados); }
-  const hoje = new Date().toISOString().slice(0, 10);
-  const validade = r.validade || new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+  const hoje = hojeISO();
+  const validade = r.validade || hojeISO(new Date(), 7);
   const doc = gerarPdfOrcamento(window.jspdf.jsPDF, {
     numero: r.numero, cliente: r.cliente, contato: r.contato, data: (r.createdAt || hoje).slice(0, 10), validade,
     itens: await Promise.all(r.itens.map(async (it, i) => ({ descricao: it.descricao, qtd: it.qtd, precoUnit: calc.itens[i].precoUnit, foto: await fotoParaPdf(ctx, it) }))),

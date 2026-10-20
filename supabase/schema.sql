@@ -40,6 +40,14 @@ begin
   end if;
 end $$;
 
+-- data de hoje no horário de Brasília (o banco roda em UTC)
+create or replace function private.hoje()
+returns date language sql stable set search_path = '' as $$
+  select (now() at time zone 'America/Sao_Paulo')::date;
+$$;
+grant usage on schema private to authenticated;
+grant execute on function private.hoje() to authenticated;
+
 -- ---------------------------------------------------------------------
 -- 1. FILAMENTOS  (cores + custo + saldo)
 -- ---------------------------------------------------------------------
@@ -88,7 +96,7 @@ create table if not exists public.orcamentos (
   linha         text not null default 'pedro' check (linha in ('pedro','b2b')),
   status        text not null default 'rascunho'
                 check (status in ('rascunho','enviado','aprovado','recusado','cancelado')),
-  validade      date not null default (current_date + 7),
+  validade      date not null default (private.hoje() + 7),
   desconto_pct  numeric(5,2) not null default 0 check (desconto_pct >= 0 and desconto_pct < 100),
   total_aceito  numeric(10,2),
   obs           text,
@@ -200,10 +208,11 @@ create index if not exists movimentos_orcamento_idx on public.movimentos_estoque
 -- ---------------------------------------------------------------------
 create table if not exists public.vendas (
   id                 uuid primary key default gen_random_uuid(),
-  data               date not null default current_date,
+  data               date not null default private.hoje(),
   cliente            text not null,
   canal              text not null default 'escola'
                      check (canal in ('escola','whatsapp','feira','shopee','ml','b2b','outro')),
+  linha              text not null default 'pedro' check (linha in ('pedro','b2b')),
   produto_id         uuid references public.produtos(id) on delete set null,
   orcamento_id       uuid references public.orcamentos(id) on delete set null,
   orcamento_item_id  uuid references public.orcamento_itens(id) on delete set null,
@@ -220,6 +229,10 @@ create table if not exists public.vendas (
   total    numeric(10,2) generated always as ((preco_unit * qtd) - desconto) stored,
   lucro    numeric(10,2) generated always as ((preco_unit * qtd) - desconto - (custo_unit * qtd)) stored
 );
+-- projetos criados antes desta coluna / do horário de Brasília
+alter table public.vendas alter column data set default private.hoje();
+alter table public.orcamentos alter column validade set default (private.hoje() + 7);
+alter table public.vendas add column if not exists linha text not null default 'pedro' check (linha in ('pedro','b2b'));
 create index if not exists vendas_orcamento_idx on public.vendas(orcamento_id);
 create index if not exists vendas_data_idx on public.vendas(data);
 
@@ -330,7 +343,7 @@ declare
   imp      record;
   pl       record;
   v_total  numeric(10,2);
-  v_semana date := date_trunc('week', current_date)::date;
+  v_semana date := date_trunc('week', private.hoje())::date;
   v_ordem  integer;
   v_tarefa uuid;
   v_venda  uuid;
@@ -400,9 +413,9 @@ begin
 
     -- venda do item: total da venda = preco_total do item, ao centavo
     v_preco_unit := round(it.preco_total / it.qtd, 2);
-    insert into public.vendas (cliente, canal, produto_id, orcamento_id, orcamento_item_id, descricao,
+    insert into public.vendas (cliente, canal, linha, produto_id, orcamento_id, orcamento_item_id, descricao,
                                qtd, preco_unit, custo_unit, desconto)
-    values (o.cliente, o.canal, it.produto_id, p_id, it.id, it.descricao,
+    values (o.cliente, o.canal, o.linha, it.produto_id, p_id, it.id, it.descricao,
             it.qtd, v_preco_unit, round(it.custo_total / it.qtd, 2), v_preco_unit * it.qtd - it.preco_total)
     returning id into v_venda;
     v_vendas := v_vendas || v_venda;
@@ -438,10 +451,10 @@ begin
     raise exception 'essa peça já foi reimpressa' using errcode = 'P0001';
   end if;
 
-  select coalesce(max(ordem), 0) + 1 into v_ordem from public.tarefas where semana = date_trunc('week', current_date)::date;
+  select coalesce(max(ordem), 0) + 1 into v_ordem from public.tarefas where semana = date_trunc('week', private.hoje())::date;
   insert into public.tarefas (semana, ordem, produto_id, orcamento_item_id, placa_id, vez, titulo, qtd,
                               gramas_previsto, segundos_previsto, reimpressao_de)
-  values (date_trunc('week', current_date)::date, v_ordem, t.produto_id, t.orcamento_item_id, t.placa_id, t.vez,
+  values (date_trunc('week', private.hoje())::date, v_ordem, t.produto_id, t.orcamento_item_id, t.placa_id, t.vez,
           t.titulo || ' · reimpressão', t.qtd, t.gramas_previsto, t.segundos_previsto, p_tarefa)
   returning id into v_nova;
 
@@ -543,7 +556,7 @@ revoke all on all functions in schema public from public, anon, authenticated;
 revoke all on all functions in schema private from public, anon, authenticated;
 revoke all on schema private from public, anon;
 grant usage on schema private to authenticated;
-grant execute on function private.eh_membro(), private.eh_marcos() to authenticated;
+grant execute on function private.eh_membro(), private.eh_marcos(), private.hoje() to authenticated;
 
 grant select on public.perfis to authenticated;
 grant select on public.filamentos to authenticated;
@@ -559,7 +572,7 @@ grant select, insert, update, delete on public.orcamento_itens, public.orcamento
 grant select on public.tarefas, public.tarefa_filamentos, public.movimentos_estoque to authenticated;
 grant update (status, motivo_falha, aprendizado, gramas_real, ordem, semana) on public.tarefas to authenticated;
 grant select, delete on public.vendas to authenticated;
-grant insert (data, cliente, canal, produto_id, descricao, qtd, preco_unit, custo_unit, desconto, pago, entregue, obs) on public.vendas to authenticated;
+grant insert (data, cliente, canal, linha, produto_id, descricao, qtd, preco_unit, custo_unit, desconto, pago, entregue, obs) on public.vendas to authenticated;
 grant update (data, pago, entregue, obs) on public.vendas to authenticated;
 grant select, insert, update on public.config to authenticated;
 grant select on public.v_resumo_mes, public.v_semana_pedro to authenticated;

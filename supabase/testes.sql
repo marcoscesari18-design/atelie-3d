@@ -380,12 +380,15 @@ rollback;
 \echo '18. venda avulsa e painel do mês'
 begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
 do $$
+declare antes public.v_resumo_mes; depois public.v_resumo_mes;
 begin
+  select * into antes from public.v_resumo_mes where mes = date_trunc('month', current_date)::date;
   insert into public.vendas (cliente, qtd, preco_unit, custo_unit, entregue, pago) values ('A', 1, 10, 4, true, false);
   insert into public.vendas (cliente, qtd, preco_unit, custo_unit, entregue, pago) values ('B', 2, 5, 2, false, false);
-  perform testes.igual((select a_receber from public.v_resumo_mes limit 1), 10.00::numeric, 'a receber = entregue e não pago');
-  perform testes.igual((select em_producao from public.v_resumo_mes limit 1), 10.00::numeric, 'em produção');
-  perform testes.igual((select faturamento from public.v_resumo_mes limit 1), 20.00::numeric, 'faturamento');
+  select * into depois from public.v_resumo_mes where mes = date_trunc('month', current_date)::date;
+  perform testes.igual(depois.a_receber - coalesce(antes.a_receber, 0), 10.00::numeric, 'a receber = entregue e não pago');
+  perform testes.igual(depois.em_producao - coalesce(antes.em_producao, 0), 10.00::numeric, 'em produção');
+  perform testes.igual(depois.faturamento - coalesce(antes.faturamento, 0), 20.00::numeric, 'faturamento');
 end $$;
 rollback;
 
@@ -397,6 +400,37 @@ begin
   update public.config set valor = '{}'::jsonb where chave = 'marca';
   get diagnostics n = row_count;
   perform testes.igual(n, 0, 'Pedro alterou config');
+end $$;
+rollback;
+
+\echo '20. venda herda a linha (Pedro ou B2B) do orçamento'
+begin; select testes.como('00000000-0000-0000-0000-00000000000a'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); o uuid; it uuid; v uuid[];
+begin
+  o := testes.orcamento(); update public.orcamentos set linha = 'b2b' where id = o;
+  it := testes.item(o, 1, 13);
+  perform testes.impressao(it, 1, 1, array[a], array[10]);
+  v := public.aprovar_orcamento(o, 13);
+  perform testes.igual((select linha from public.vendas where id = v[1]), 'b2b', 'linha da venda');
+  insert into public.vendas (cliente, qtd, preco_unit) values ('Avulsa', 1, 5);
+  perform testes.igual((select linha from public.vendas where cliente = 'Avulsa'), 'pedro', 'venda avulsa é do Pedro por padrão');
+end $$;
+rollback;
+
+\echo '21. datas no horário de Brasília (venda, validade, semana)'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare hoje date := (now() at time zone 'America/Sao_Paulo')::date; a uuid := testes.rolo('Laranja'); o uuid; it uuid;
+begin
+  insert into public.vendas (cliente, qtd, preco_unit) values ('Data', 1, 5);
+  perform testes.igual((select data from public.vendas where cliente = 'Data'), hoje, 'data da venda');
+  o := testes.orcamento();
+  perform testes.igual((select validade from public.orcamentos where id = o), hoje + 7, 'validade');
+  it := testes.item(o, 1, 13);
+  perform testes.impressao(it, 1, 1, array[a], array[10]);
+  perform public.aprovar_orcamento(o, 13);
+  perform testes.igual((select semana from public.tarefas where orcamento_item_id = it), date_trunc('week', hoje)::date, 'semana');
 end $$;
 rollback;
 
