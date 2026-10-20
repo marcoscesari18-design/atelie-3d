@@ -67,7 +67,7 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
 .item .titulo { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .meta { color: var(--dim); font-size: 13px; }
 .item .valor { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin-bottom: 8px; }
 .kpi { background: var(--card); border: 1px solid var(--linha-suave); border-radius: var(--raio); padding: 12px 14px; }
 .kpi .rot { color: var(--dim); font-size: 13px; }
 .kpi .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 700; }
@@ -185,3 +185,18 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
 .placa-opcao { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--linha-suave); cursor: pointer; }
 .placa-opcao input { width: 22px; height: 22px; accent-color: var(--acento); }
 .aviso ul { margin: 6px 0 0; padding-left: 18px; }
+
+/* ---------- semana ---------- */
+.tarefa-topo { display: flex; gap: 10px; align-items: flex-start; }
+.tarefa .corpo { flex: 1; min-width: 0; }
+.tarefa .titulo { font-weight: 600; }
+.tarefa.ok, .tarefa.falhou { opacity: .85; }
+.status-botoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.status-botoes .btn { min-height: 52px; }
+.status-botoes .btn[aria-pressed=true] { border-color: var(--acento); color: var(--acento); }
+.status-botoes .st-ok { border-color: rgba(123,214,106,.5); color: var(--ok); }
+.status-botoes .st-falhou { border-color: rgba(255,107,94,.5); color: var(--erro); }
+.campo textarea { resize: vertical; }
+.licao { padding: 8px 0; border-bottom: 1px solid var(--linha-suave); }
+.licao:last-child { border-bottom: 0; }
+.licao p { margin: 4px 0; }
