@@ -245,6 +245,9 @@ do $$ begin
 end $$;
 alter table public.orcamentos alter column validade set default (private.hoje() + 7);
 alter table public.vendas add column if not exists linha text not null default 'pedro' check (linha in ('pedro','b2b'));
+-- frete do orçamento: frete_cliente = cliente paga (soma no total); false = frete grátis (sai do lucro)
+alter table public.orcamentos add column if not exists frete numeric(10,2) not null default 0 check (frete >= 0);
+alter table public.orcamentos add column if not exists frete_cliente boolean not null default true;
 create index if not exists vendas_orcamento_idx on public.vendas(orcamento_id);
 create index if not exists vendas_data_idx on public.vendas(data);
 
@@ -323,6 +326,25 @@ begin
   end if;
   return new;
 end $$;
+-- A venda "Frete" de um orçamento segue os itens: paga/entregue só quando todos os itens estão.
+-- No banco (não na tela) e travando o orçamento, para dois toques seguidos não deixarem o frete defasado.
+create or replace function private.frete_segue_itens()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.orcamento_id is null or new.orcamento_item_id is null then return null; end if;
+  perform 1 from public.orcamentos where id = new.orcamento_id for update;
+  update public.vendas f
+     set pago     = coalesce((select bool_and(i.pago) from public.vendas i
+                               where i.orcamento_id = new.orcamento_id and i.orcamento_item_id is not null and not i.cancelada), f.pago),
+         entregue = coalesce((select bool_and(i.entregue) from public.vendas i
+                               where i.orcamento_id = new.orcamento_id and i.orcamento_item_id is not null and not i.cancelada), f.entregue)
+   where f.orcamento_id = new.orcamento_id and f.orcamento_item_id is null and f.descricao = 'Frete' and not f.cancelada;
+  return null;
+end $$;
+drop trigger if exists trg_frete_segue_itens on public.vendas;
+create trigger trg_frete_segue_itens after update of pago, entregue on public.vendas
+  for each row when (new.orcamento_item_id is not null) execute function private.frete_segue_itens();
+
 drop trigger if exists trg_tarefa_status on public.tarefas;
 create trigger trg_tarefa_status before update on public.tarefas
   for each row execute function private.tarefa_status();
@@ -375,6 +397,7 @@ begin
   end if;
 
   select sum(preco_total) into v_total from public.orcamento_itens where orcamento_id = p_id;
+  v_total := v_total + case when o.frete_cliente then o.frete else 0 end;   -- o desconto nunca pega o frete
   if p_total_esperado is null or round(p_total_esperado, 2) is distinct from v_total then
     raise exception 'o orçamento mudou, confira de novo (total agora: %)', v_total using errcode = 'P0001';
   end if;
@@ -440,6 +463,14 @@ begin
     returning id into v_venda;
     v_vendas := v_vendas || v_venda;
   end loop;
+
+  -- frete vira uma venda própria: cliente paga → preço = frete, lucro 0; frete grátis → preço 0, lucro −frete
+  if o.frete > 0 then
+    insert into public.vendas (cliente, canal, linha, orcamento_id, descricao, qtd, preco_unit, custo_unit)
+    values (o.cliente, o.canal, o.linha, p_id, 'Frete', 1, case when o.frete_cliente then o.frete else 0 end, o.frete)
+    returning id into v_venda;
+    v_vendas := v_vendas || v_venda;
+  end if;
 
   update public.orcamentos
      set status = 'aprovado', total_aceito = v_total, decidido_em = now()
@@ -544,6 +575,18 @@ begin
 end $$;
 
 -- grava o orçamento inteiro (cabeçalho + itens + impressões + placas + cores) numa transação só
+-- Cor do rolo conferida por foto: qualquer membro (Pedro também) troca SÓ a cor; preço e gramas seguem só com o Marcos.
+create or replace function public.corrigir_cor_rolo(p_filamento uuid, p_cor text)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.exigir_membro();
+  if p_cor is null or p_cor !~ '^#[0-9A-Fa-f]{6}$' then
+    raise exception 'cor inválida' using errcode = '22023';
+  end if;
+  update public.filamentos set cor_hex = upper(p_cor) where id = p_filamento;
+  if not found then raise exception 'rolo não encontrado' using errcode = 'P0002'; end if;
+end $$;
+
 create or replace function public.salvar_orcamento(p_id uuid, p_dados jsonb)
 returns table (id uuid, numero integer) language plpgsql security definer set search_path = '' as $$
 declare
@@ -560,9 +603,10 @@ begin
     raise exception 'só o Marcos faz orçamento B2B' using errcode = '42501';
   end if;
   if v_id is null then
-    insert into public.orcamentos (cliente, contato, canal, linha, desconto_pct, obs)
+    insert into public.orcamentos (cliente, contato, canal, linha, desconto_pct, obs, frete, frete_cliente)
     values (o ->> 'cliente', nullif(o ->> 'contato', ''), coalesce(o ->> 'canal', 'escola'), coalesce(o ->> 'linha', 'pedro'),
-            coalesce((o ->> 'desconto_pct')::numeric, 0), nullif(o ->> 'obs', ''))
+            coalesce((o ->> 'desconto_pct')::numeric, 0), nullif(o ->> 'obs', ''),
+            coalesce((o ->> 'frete')::numeric, 0), coalesce((o ->> 'frete_cliente')::boolean, true))
     returning orcamentos.id, orcamentos.numero into v_id, v_num;
   else
     select status, linha, orcamentos.numero into v_st, v_lin, v_num from public.orcamentos where orcamentos.id = v_id for update;
@@ -570,7 +614,8 @@ begin
     if v_st not in ('rascunho','enviado') then raise exception 'esse orçamento já foi %; não dá mais para mudar', v_st using errcode = 'P0001'; end if;
     if v_lin = 'b2b' and not private.eh_marcos() then raise exception 'só o Marcos mexe em orçamento B2B' using errcode = '42501'; end if;
     update public.orcamentos set cliente = o ->> 'cliente', contato = nullif(o ->> 'contato', ''), canal = coalesce(o ->> 'canal', canal),
-           linha = coalesce(o ->> 'linha', linha), desconto_pct = coalesce((o ->> 'desconto_pct')::numeric, 0), obs = nullif(o ->> 'obs', '')
+           linha = coalesce(o ->> 'linha', linha), desconto_pct = coalesce((o ->> 'desconto_pct')::numeric, 0), obs = nullif(o ->> 'obs', ''),
+           frete = coalesce((o ->> 'frete')::numeric, 0), frete_cliente = coalesce((o ->> 'frete_cliente')::boolean, true)
      where orcamentos.id = v_id;
     delete from public.orcamento_itens where orcamento_id = v_id;
   end if;
@@ -655,7 +700,8 @@ grant select on public.v_resumo_mes, public.v_semana_pedro to authenticated;
 
 grant execute on function public.salvar_orcamento(uuid, jsonb), public.marcar_orcamento(uuid, text), public.aprovar_orcamento(uuid, numeric),
   public.reimprimir_tarefa(uuid), public.cancelar_orcamento(uuid),
-  public.ajustar_estoque(uuid, numeric, text), public.entrada_rolo(uuid, numeric) to authenticated;
+  public.ajustar_estoque(uuid, numeric, text), public.entrada_rolo(uuid, numeric),
+  public.corrigir_cor_rolo(uuid, text) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- 12. RLS — só quem está em `perfis`

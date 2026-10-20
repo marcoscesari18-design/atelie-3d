@@ -99,3 +99,53 @@ test('reabrir orçamento com desconto mantém o total salvo (caso do Codex: R$ 8
   const de = rascunhoDoBanco(orc, rolos);
   assert.deepEqual(de.itens.map((i) => i.precoUnit), [5.07, 5.22]);
 });
+
+test('frete pago pelo cliente soma no total, fora do desconto, e não muda o lucro', () => {
+  const r = rascunho();
+  r.itens = [{ ...r.itens[0], descricao: 'A', precoUnit: 10 }, { ...structuredClone(r.itens[0]), descricao: 'B', precoUnit: 10 }];
+  r.descontoPct = 10; r.frete = 12.5; r.freteCliente = true;
+  const semFrete = calcularRascunho({ ...r, frete: 0 }, rolos, params);
+  const c = calcularRascunho(r, rolos, params);
+  assert.equal(c.totalItens, 18);            // 20 − 10%
+  assert.equal(c.frete, 12.5);
+  assert.equal(c.total, 30.5);               // desconto não pega o frete
+  assert.equal(c.lucro, semFrete.lucro);     // frete do cliente não é lucro
+});
+
+test('frete grátis (eu pago) não entra no total e sai do lucro', () => {
+  const r = rascunho(); r.itens[0].precoUnit = 20; r.frete = 10; r.freteCliente = false;
+  const semFrete = calcularRascunho({ ...r, frete: 0 }, rolos, params);
+  const c = calcularRascunho(r, rolos, params);
+  assert.equal(c.total, 20);
+  assert.equal(c.lucro, Math.round((semFrete.lucro - 10) * 100) / 100);
+});
+
+test('frete vazio ou negativo', () => {
+  const r = rascunho(); r.frete = '';
+  assert.equal(calcularRascunho(r, rolos, params).total, 13);
+  r.frete = -2;
+  assert.ok(problemas(r, rolos, params).some((x) => /frete/i.test(x)));
+});
+
+test('frete vai e volta do banco', () => {
+  const r = rascunho(); r.frete = 7.5; r.freteCliente = false;
+  const l = linhasParaBanco(r, calcularRascunho(r, rolos, params));
+  assert.equal(l.orcamento.frete, 7.5); assert.equal(l.orcamento.frete_cliente, false);
+  assert.equal(l.total, 13);
+  const de = rascunhoDoBanco({ id: 'o', numero: 1, status: 'rascunho', cliente: 'J', canal: 'escola', linha: 'pedro', desconto_pct: 0,
+    frete: '7.50', frete_cliente: false, orcamento_itens: [] }, rolos);
+  assert.equal(de.frete, 7.5); assert.equal(de.freteCliente, false);
+  const antigo = rascunhoDoBanco({ id: 'o', numero: 1, status: 'rascunho', cliente: 'J', canal: 'escola', linha: 'pedro', desconto_pct: 0, orcamento_itens: [] }, rolos);
+  assert.equal(antigo.frete, 0); assert.equal(antigo.freteCliente, true);
+});
+
+test('preço com fração de centavo vira centavo inteiro e reabre igual (caso do Codex: 1,005 × 2)', () => {
+  const r = rascunho(); r.itens[0].qtd = 2; r.itens[0].impressoes[0].vezes = 2; r.itens[0].precoUnit = 1.005;
+  const c = calcularRascunho(r, rolos, params);
+  const l = linhasParaBanco(r, c);
+  assert.equal(l.itens[0].preco_total, l.itens[0].preco_unit * 2);
+  const de = rascunhoDoBanco({ id: 'o', numero: 1, status: 'rascunho', cliente: 'J', canal: 'escola', linha: 'pedro', desconto_pct: 0,
+    orcamento_itens: l.itens.map((it) => ({ ...it, orcamento_impressoes: r.itens[0].impressoes.map((m) => ({ arquivo_nome: 'c', vezes: 2, unidades_por_vez: 1,
+      orcamento_item_placas: m.placas.map((p) => ({ placa: p.placa, segundos: p.segundos, gramas: p.gramas, orcamento_placa_filamentos: p.cores.map((x) => ({ filamento_id: x.filamentoId, gramas: x.gramas })) })) })) })) }, rolos);
+  assert.equal(calcularRascunho(de, rolos, params).total, c.total);
+});

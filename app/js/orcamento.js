@@ -34,23 +34,28 @@ function itemParaCalculo(item, mapa) {
   };
 }
 
-// → { itens: [{ custoItem, custoUnit, precoSugerido, precoUnit, unidades, faltam, sobra }], subtotal, total, linhas, custo, lucro }
+// → { itens: [{ custoItem, custoUnit, precoSugerido, precoUnit, unidades, faltam, sobra }], subtotal, totalItens, frete, freteCliente, total, linhas, custo, lucro }
+// Frete: cliente paga → soma no total (fora do desconto) e não é lucro; frete grátis → fica fora do total e sai do lucro.
 export function calcularRascunho(r, rolos, params) {
   const mapa = porId(rolos);
   const itens = r.itens.map((item) => {
     const base = itemParaCalculo(item, mapa);
     const unidades = base.impressoes.reduce((s, i) => s + i.vezes * i.unidadesPorVez, 0);
     if (unidades > base.qtd || base.impressoes.length === 0) {
-      return { custoItem: 0, custoUnit: 0, precoSugerido: 0, precoUnit: Number(item.precoUnit) || 0, unidades, faltam: base.qtd - unidades, sobra: unidades > base.qtd };
+      return { custoItem: 0, custoUnit: 0, precoSugerido: 0, precoUnit: r2(Number(item.precoUnit) || 0), unidades, faltam: base.qtd - unidades, sobra: unidades > base.qtd };
     }
     const c = calcularItem({ ...base, params });
-    const precoUnit = item.precoUnit != null && item.precoUnit !== '' ? Number(item.precoUnit) : c.arredondadoUnit;
+    // centavo inteiro: o banco guarda o unitário com 2 casas, e o total reaberto tem de ser o mesmo
+    const precoUnit = item.precoUnit != null && item.precoUnit !== '' ? r2(Number(item.precoUnit)) : c.arredondadoUnit;
     return { custoItem: c.custoItem, custoUnit: c.custoUnit, precoSugerido: c.arredondadoUnit, precoUnit, unidades, faltam: c.faltam, sobra: false };
   });
   const desconto = r.itens.length > 1 ? Number(r.descontoPct) || 0 : 0;
   const o = calcularOrcamento({ itens: itens.map((c, i) => ({ precoUnit: c.precoUnit, qtd: Number(r.itens[i].qtd) })), descontoPct: desconto });
   const custo = r2(itens.reduce((s, c) => s + c.custoItem, 0));
-  return { itens, subtotal: o.subtotal, total: o.total, linhas: o.linhas, custo, lucro: r2(o.total - custo), desconto };
+  const frete = Math.max(0, r2(Number(r.frete) || 0));
+  const freteCliente = r.freteCliente !== false;
+  return { itens, subtotal: o.subtotal, totalItens: o.total, frete, freteCliente, total: r2(o.total + (freteCliente ? frete : 0)), linhas: o.linhas,
+    custo, lucro: r2(o.total - custo - (freteCliente ? 0 : frete)), desconto };
 }
 
 // Lista de frases do que impede salvar/aprovar. Vazia = pode seguir.
@@ -60,6 +65,7 @@ export function problemas(r, rolos, params) {
   if (!r.itens.length) p.push('Inclua pelo menos um item.');
   const desc = Number(r.descontoPct) || 0;
   if (desc < 0 || desc >= 100) p.push('Desconto precisa ser entre 0 e 99%.');
+  if (r.frete !== '' && r.frete != null && !(Number(r.frete) >= 0)) p.push('Frete não pode ser negativo.');
   const c = calcularRascunho(r, rolos, params);
   r.itens.forEach((item, i) => {
     const nome = item.descricao?.trim() || `Item ${i + 1}`;
@@ -94,7 +100,7 @@ export function resumoBaixa(r, rolos) {
 export function linhasParaBanco(r, calculo) {
   return {
     orcamento: { cliente: r.cliente.trim(), contato: r.contato?.trim() || null, canal: r.canal, linha: r.linha,
-      desconto_pct: calculo.desconto, obs: r.obs?.trim() || null },
+      desconto_pct: calculo.desconto, obs: r.obs?.trim() || null, frete: calculo.frete, frete_cliente: calculo.freteCliente },
     total: calculo.total,
     itens: r.itens.map((item, i) => ({
       descricao: item.descricao.trim(), qtd: Number(item.qtd), extras: Number(item.extras) || 0,
@@ -121,6 +127,7 @@ export function rascunhoDoBanco(o, rolos) {
   return {
     id: o.id, numero: o.numero, status: o.status, cliente: o.cliente, contato: o.contato || '', canal: o.canal, linha: o.linha,
     descontoPct: d, obs: o.obs || '', totalAceito: o.total_aceito, validade: o.validade, createdAt: o.created_at,
+    frete: Number(o.frete) || 0, freteCliente: o.frete_cliente !== false,
     itens: itens.map((it) => ({
       id: it.id, descricao: it.descricao, qtd: it.qtd, extras: Number(it.extras) || 0, fotoPath: it.foto_path, produtoId: it.produto_id || null,
       // preço bruto guardado; orçamentos antigos (sem a coluna) reconstroem pelo total

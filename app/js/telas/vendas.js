@@ -2,7 +2,7 @@
 // Vendas de orçamento nascem na aprovação; aqui o Pedro marca pago/entregue.
 import { h, vazio, erroTela, avisar, dialogo, campo, confirmar } from '../ui.js';
 import { brl, numeroOrc, inicioDoMesISO } from '../formato.js';
-import { resumoVendas } from '../vendas-calc.js';
+import { resumoVendas, ehFrete } from '../vendas-calc.js';
 
 const CANAIS = { escola: 'Escola', whatsapp: 'WhatsApp', feira: 'Feira', shopee: 'Shopee', ml: 'Mercado Livre', b2b: 'B2B', outro: 'Outro' };
 let canalFiltro = 'todos';
@@ -11,7 +11,7 @@ export async function render(tela, ctx) {
   const marcos = ctx.perfil.papel === 'marcos';
   const desde = inicioDoMesISO();
   const r = await ctx.db.listar('vendas', (q) => {
-    let c = q.select('id, data, cliente, canal, linha, descricao, qtd, preco_unit, total, lucro, pago, entregue, cancelada, orcamento_id, orcamentos(numero)')
+    let c = q.select('id, data, cliente, canal, linha, descricao, qtd, preco_unit, total, lucro, pago, entregue, cancelada, orcamento_id, orcamento_item_id, orcamentos(numero)')
       .or(`data.gte.${desde},and(entregue.eq.false,cancelada.eq.false),and(pago.eq.false,cancelada.eq.false)`)
       .order('data', { ascending: false }).order('created_at', { ascending: false });
     if (!marcos) c = c.eq('linha', 'pedro');
@@ -52,8 +52,10 @@ function cartao(v, ctx) {
   const alternar = async (campoNome) => {
     const x = await ctx.db.atualizar('vendas', v.id, { [campoNome]: !v[campoNome] }, 'id');
     if (x.erro) return avisar(x.erro, 'erro');
+    // a venda Frete do mesmo orçamento é acertada pelo banco (trigger frete_segue_itens)
     ctx.atualizar();
   };
+  const frete = ehFrete(v);
   return h('div', { class: `card venda ${v.cancelada ? 'cancelada' : ''} ${v.linha === 'b2b' ? 'linha-b2b' : ''}` },
     h('div', { class: 'tarefa-topo' },
       h('div', { class: 'corpo' },
@@ -61,9 +63,11 @@ function cartao(v, ctx) {
         h('div', { class: 'meta' }, `${v.qtd}× ${v.descricao || 'venda'}`, ' · ', new Date(`${v.data}T12:00:00`).toLocaleDateString('pt-BR'), ' · ', CANAIS[v.canal] || v.canal,
           v.orcamento_id ? h('a', { href: `#orcamentos/${v.orcamento_id}`, style: { marginLeft: '6px' } }, numeroOrc(v.orcamentos?.numero ?? 0)) : null)),
       h('div', { class: 'valor' }, h('div', {}, brl(v.total)), v.cancelada ? h('span', { class: 'chip erro' }, 'Cancelada') : null)),
-    v.cancelada ? null : h('div', { class: 'status-botoes' },
+    v.cancelada || frete ? null : h('div', { class: 'status-botoes' },
       h('button', { type: 'button', class: `btn ${v.pago ? 'st-ok' : ''}`, 'aria-pressed': String(v.pago), onclick: () => alternar('pago') }, v.pago ? 'Pago ✓' : 'Marcar pago'),
       h('button', { type: 'button', class: `btn ${v.entregue ? 'st-ok' : ''}`, 'aria-pressed': String(v.entregue), onclick: () => alternar('entregue') }, v.entregue ? 'Entregue ✓' : 'Marcar entregue')),
+    frete && !v.cancelada ? h('p', { class: 'meta frete-segue' }, Number(v.total) > 0 ? 'Segue o pedido: fica pago e entregue junto com os itens.' : 'Frete grátis: você pagou; sai do lucro.',
+      ' ', h('span', { class: `chip ${v.pago ? 'ok' : ''}` }, v.pago ? 'Pago' : 'Não pago'), ' ', h('span', { class: `chip ${v.entregue ? 'ok' : ''}` }, v.entregue ? 'Entregue' : 'Não entregue')) : null,
     !v.orcamento_id && !v.cancelada ? h('div', { class: 'acoes' }, h('button', { class: 'btn-link', type: 'button', onclick: async () => {
       if (!(await confirmar('Apagar venda?', 'Use só se registrou errado.', 'Apagar'))) return;
       const x = await ctx.db.apagar('vendas', v.id);

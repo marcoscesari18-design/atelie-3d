@@ -3,7 +3,7 @@
 import { h, limpar, erroTela, avisar, campo, botao } from '../ui.js';
 import { brl } from '../formato.js';
 import { calcularPlaca, arredondar } from '../calc.js';
-import { precoMarketplace } from '../marketplace.js';
+import { precoMarketplace, precoDireto } from '../marketplace.js';
 
 const PARAMS = [
   ['margem', 'Margem de lucro (% sobre o custo)'], ['maoHora', 'Mão de obra (R$/hora)'], ['maoMin', 'Tempo manual por placa (min)'],
@@ -116,7 +116,16 @@ function calculadoraLivre(d, conf, rolos) {
   const ext = h('input', { type: 'number', inputmode: 'decimal', min: '0', step: 'any', placeholder: 'embalagem, ímã…' });
   const rolo = h('select', {}, h('option', { value: '' }, `Preço padrão (${brl(d.precoKg)}/kg)`), rolos.map((r) => h('option', { value: r.id }, `${r.cor_nome} · ${r.tipo} · ${brl(r.custo_kg)}/kg`)));
   const saida = h('div', {});
-  let canal = 'shopee';
+  const resultado = h('div', {});
+  let canal = 'direta';
+  // frete da venda direta: fica fora do bloco redesenhado para não perder o foco enquanto digita
+  let freteCliente = true;
+  const frete = h('input', { type: 'number', inputmode: 'decimal', min: '0', step: '0.5', placeholder: 'sem frete' });
+  const quem = h('div', { class: 'segmentado', role: 'group', 'aria-label': 'Quem paga o frete' },
+    [[true, 'Cliente paga'], [false, 'Frete grátis (eu pago)']].map(([v, t]) => h('button', { type: 'button', 'aria-pressed': String(v),
+      onclick: (e) => { freteCliente = v; quem.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); atualizar(); } }, t)));
+  const blocoQuem = h('div', { class: 'campo oculto' }, h('span', { class: 'rotulo' }, 'Quem paga o frete?'), quem);
+  const blocoFrete = h('div', { style: { marginTop: '12px' } }, campo('Frete (R$)', frete), blocoQuem);
   const regime = (conf.regimes || {})[d.regime] || { taxa: 0, label: 'Sem imposto' };
 
   const atualizar = () => {
@@ -127,7 +136,6 @@ function calculadoraLivre(d, conf, rolos) {
     const lucro = preco - p.custo;
     const imposto = preco * (regime.taxa / 100);
     const vazio = !(num(g) > 0 && segundos > 0);
-    const mk = precoMarketplace({ custoTotal: p.custo, lucroAlvo: lucro, canal, taxas: d });
     const linha = (rot, v, cls = '') => h('div', { class: `linha-dado ${cls}` }, h('span', {}, rot), h('span', { class: 'v' }, v));
     limpar(saida).append(...[
       h('div', { class: 'kpis', style: { marginTop: '8px' } },
@@ -136,9 +144,25 @@ function calculadoraLivre(d, conf, rolos) {
       h('div', {}, linha('Material', brl(p.cMat)), linha('Energia', brl(p.cEne)), linha('Desgaste da máquina', brl(p.cDes)),
         linha('Mão de obra', brl(p.cMao)), linha('Reserva p/ falhas', brl(p.cFal)), linha('Extras', brl(p.cExt)),
         regime.taxa > 0 ? linha(`Imposto ${regime.taxa}% → lucro líquido`, brl(lucro - imposto)) : null),
-      h('p', { class: 'secao' }, 'Para anunciar com o mesmo lucro'),
-      h('div', { class: 'segmentado' }, [['shopee', 'Shopee'], ['ml', 'ML Clássico'], ['mlp', 'ML Premium']].map(([v, t]) =>
-        h('button', { type: 'button', 'aria-pressed': String(canal === v), onclick: () => { canal = v; atualizar(); } }, t))),
+      h('p', { class: 'secao' }, 'Onde vai vender'),
+      h('div', { class: 'segmentado canais', role: 'group', 'aria-label': 'Onde vai vender' }, [['direta', 'Venda direta'], ['shopee', 'Shopee'], ['ml', 'ML Clássico'], ['mlp', 'ML Premium']].map(([v, t]) =>
+        h('button', { type: 'button', 'aria-pressed': String(canal === v), onclick: () => { canal = v; atualizar(); } }, t)))].filter(Boolean));
+    blocoFrete.classList.toggle('oculto', canal !== 'direta');
+    blocoQuem.classList.toggle('oculto', !(num(frete) > 0));
+    if (canal === 'direta') {
+      const dr = precoDireto({ custoTotal: p.custo, lucroAlvo: lucro, frete: num(frete), freteCliente });
+      limpar(resultado).append(...[
+        h('div', { style: { marginTop: '8px' } },
+          linha('Cobre', `${brl(dr.preco)} (ou ${brl(dr.arredondado)})`, 'total'),
+          linha('Comissão', brl(0)),
+          dr.frete > 0 ? linha(dr.freteCliente ? 'Frete (o cliente paga)' : 'Frete grátis (você paga)', dr.freteCliente ? `+ ${brl(dr.frete)}` : `− ${brl(dr.frete)} do lucro`) : null,
+          dr.frete > 0 && dr.freteCliente ? linha('Cliente paga no total', brl(dr.clientePaga)) : null,
+          linha('Lucro', brl(dr.lucro))),
+        !vazio && dr.alerta ? h('p', { class: 'aviso erro' }, 'Com esse frete grátis você vende no prejuízo. Cobre o frete ou suba o preço.') : null].filter(Boolean));
+      return;
+    }
+    const mk = precoMarketplace({ custoTotal: p.custo, lucroAlvo: lucro, canal, taxas: d });
+    limpar(resultado).append(...[
       h('div', { style: { marginTop: '8px' } },
         linha('Anuncie por', `${brl(mk.preco)} (ou ${brl(mk.arredondado)})`, 'total'),
         linha('Comissão', `− ${brl(mk.comissao)}`),
@@ -147,9 +171,9 @@ function calculadoraLivre(d, conf, rolos) {
         linha('Você recebe', brl(mk.recebe)), linha('Lucro', brl(mk.lucro))),
       !vazio && mk.alerta ? h('p', { class: `aviso ${mk.alerta === 'prejuizo' ? 'erro' : ''}` }, ALERTAS[mk.alerta]) : null].filter(Boolean));
   };
-  [g, hh, mm, ext].forEach((i) => i.addEventListener('input', atualizar));
+  [g, hh, mm, ext, frete].forEach((i) => i.addEventListener('input', atualizar));
   rolo.addEventListener('change', atualizar);
   atualizar();
   return h('div', { class: 'card' }, h('div', { class: 'grade-2' }, campo('Filamento (g)', g), campo('Extras (R$)', ext), campo('Horas', hh), campo('Minutos', mm)),
-    campo('Rolo', rolo), saida);
+    campo('Rolo', rolo), saida, blocoFrete, resultado);
 }

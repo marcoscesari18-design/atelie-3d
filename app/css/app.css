@@ -137,7 +137,7 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
   padding: 8px; background: rgba(27, 21, 15, .96); border: 1px solid var(--linha); border-radius: var(--raio); }
 .acoes-fixas .btn { flex: 1; }
 .campo { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; min-width: 0; }
-.campo label { font-size: 14px; color: var(--dim); font-weight: 500; }
+.campo label, .campo .rotulo { font-size: 14px; color: var(--dim); font-weight: 500; }
 .campo small { color: var(--fraco); font-size: 13px; }
 .campo input, .campo select, .campo textarea { width: 100%; min-height: 44px; background: var(--sup); border: 1.5px solid var(--linha);
   border-radius: var(--raio-p); padding: 10px 12px; }
@@ -153,6 +153,8 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
 .segmentado button { flex: 1; min-height: 44px; padding: 0 12px; border-radius: var(--raio-p); border: 1px solid var(--linha); background: transparent; cursor: pointer; font-weight: 500; }
 .segmentado button:hover { background: var(--card-2); }
 .segmentado button[aria-pressed=true] { border-color: var(--acento); color: var(--acento); background: var(--acento-fundo); }
+.segmentado.canais { display: grid; grid-template-columns: 1fr 1fr; }
+@media (min-width: 640px) { .segmentado.canais { grid-template-columns: repeat(4, 1fr); } }
 @media (min-width: 1024px) { .tela > .segmentado button { flex: 0 0 auto; min-width: 120px; } }
 
 /* ---------- estados ---------- */
@@ -244,6 +246,13 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
   .rolo { padding: 14px; }
   .rolo .carretel { --tam: 56px; }
 }
+.btn-foto { width: 100%; margin: -4px 0 14px; }
+.foto-cor { display: block; max-width: 100%; max-height: 52vh; margin: 0 auto; border-radius: var(--raio-p); touch-action: none; cursor: crosshair; }
+.cores-comparar { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 12px; color: var(--dim); }
+.cores-comparar > span { display: flex; align-items: center; gap: 8px; }
+.grande-bolinha { width: 32px; height: 32px; vertical-align: middle; }
+.grande-bolinha.vazia { background: repeating-linear-gradient(45deg, var(--card-2) 0 4px, var(--sup) 4px 8px); }
+.foto-cor:focus-visible { outline: 3px solid var(--acento); outline-offset: 3px; }
 .detalhe-rolo { display: flex; gap: 16px; align-items: center; margin-bottom: 4px; }
 .detalhe-rolo .grande { color: var(--txt); }
 
@@ -303,6 +312,8 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
 .venda .acoes { margin-top: 4px; }
 .venda .acoes .btn-link { padding-left: 0; padding-right: 16px; font-size: 14px; }
 .venda.cancelada { opacity: .55; }
+.frete-segue { margin: 10px 0 0; font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+@media (min-width: 1024px) { .lista-vendas .venda .frete-segue { grid-column: 2; grid-row: 1 / span 2; margin: 0; justify-content: flex-end; } }
 @media (min-width: 1024px) {
   /* uma venda por linha: quem/o quê/valor à esquerda, Pago e Entregue à direita */
   .lista-vendas .venda { display: grid; grid-template-columns: minmax(0, 1fr) 320px; column-gap: 24px; align-items: center; padding: 12px 18px; }

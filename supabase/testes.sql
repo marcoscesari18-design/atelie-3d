@@ -68,6 +68,10 @@ create function testes.linha(p_orc uuid, p_linha text) returns void language sql
   update public.orcamentos set linha = p_linha where id = p_orc;
 $$;
 
+create function testes.frete(p_orc uuid, p_frete numeric, p_cliente boolean) returns void language sql security definer as $$
+  update public.orcamentos set frete = p_frete, frete_cliente = p_cliente where id = p_orc;
+$$;
+
 grant execute on all functions in schema testes to authenticated, anon;
 
 -- ================================================================
@@ -558,6 +562,122 @@ begin
   delete from storage.objects where bucket_id = 'fotos' and name = 'teste/x.png';
   get diagnostics n = row_count;
   perform testes.igual(n, 0, 'apagou foto');
+end $$;
+rollback;
+
+\echo '29. frete pago pelo cliente soma no total e vira a venda Frete (lucro 0)'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); o uuid; it uuid; v uuid[];
+begin
+  o := testes.orcamento(); it := testes.item(o, 1, 20, 8);
+  perform testes.impressao(it, 1, 1, array[a], array[10]);
+  perform testes.frete(o, 12.5, true);
+  begin perform public.aprovar_orcamento(o, 20); raise exception 'FALHOU: aprovou sem o frete no total';
+  exception when others then if sqlerrm like 'FALHOU%' then raise; end if; end;
+  v := public.aprovar_orcamento(o, 32.5);
+  perform testes.igual((select total_aceito from public.orcamentos where id = o), 32.50::numeric, 'total aceito com frete');
+  perform testes.igual(array_length(v, 1), 2, 'item + frete');
+  perform testes.igual((select sum(total) from public.vendas where orcamento_id = o), 32.50::numeric, 'vendas batem com o total');
+  perform testes.igual((select total from public.vendas where orcamento_id = o and descricao = 'Frete'), 12.50::numeric, 'venda Frete');
+  perform testes.igual((select lucro from public.vendas where orcamento_id = o and descricao = 'Frete'), 0.00::numeric, 'frete do cliente não é lucro');
+end $$;
+rollback;
+
+\echo '30. frete pago por mim: total sem frete e o frete sai do lucro'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); o uuid; it uuid;
+begin
+  o := testes.orcamento(); it := testes.item(o, 1, 20, 8);
+  perform testes.impressao(it, 1, 1, array[a], array[10]);
+  perform testes.frete(o, 10, false);
+  begin perform public.aprovar_orcamento(o, 30); raise exception 'FALHOU: somou frete grátis no total';
+  exception when others then if sqlerrm like 'FALHOU%' then raise; end if; end;
+  perform public.aprovar_orcamento(o, 20);
+  perform testes.igual((select sum(total) from public.vendas where orcamento_id = o), 20.00::numeric, 'vendas = total');
+  perform testes.igual((select lucro from public.vendas where orcamento_id = o and descricao = 'Frete'), -10.00::numeric, 'frete grátis tira do lucro');
+  perform testes.igual((select sum(lucro) from public.vendas where orcamento_id = o), 2.00::numeric, 'lucro total 20 - 8 - 10');
+end $$;
+rollback;
+
+\echo '31. salvar grava o frete; frete negativo é recusado; sem frete não cria venda Frete'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); d jsonb; r record; v uuid[];
+begin
+  d := jsonb_build_object('orcamento', jsonb_build_object('cliente','Ana','canal','escola','linha','pedro','desconto_pct',0,'frete',7.5,'frete_cliente',false),
+    'itens', jsonb_build_array(jsonb_build_object('descricao','Peça','qtd',1,'custo_total',5,'preco_unit',10,'preco_total',10,
+      'impressoes', jsonb_build_array(jsonb_build_object('vezes',1,'unidades_por_vez',1,
+        'placas', jsonb_build_array(jsonb_build_object('placa',1,'segundos',600,'gramas',12,
+          'filamentos', jsonb_build_array(jsonb_build_object('filamento_id',a,'gramas',12)))))))));
+  select * into r from public.salvar_orcamento(null, d);
+  perform testes.igual((select frete from public.orcamentos where id = r.id), 7.50::numeric, 'frete gravado');
+  perform testes.igual((select frete_cliente from public.orcamentos where id = r.id), false, 'quem paga gravado');
+  begin perform public.salvar_orcamento(r.id, jsonb_set(d, '{orcamento,frete}', '-1')); raise exception 'FALHOU: aceitou frete negativo';
+  exception when others then if sqlerrm like 'FALHOU%' then raise; end if; end;
+  perform public.salvar_orcamento(r.id, jsonb_set(d, '{orcamento,frete}', '0'));
+  v := public.aprovar_orcamento(r.id, 10);
+  perform testes.igual(array_length(v, 1), 1, 'sem frete, só a venda do item');
+end $$;
+rollback;
+
+\echo '32. cancelar orçamento cancela também a venda Frete'
+begin; select testes.como('00000000-0000-0000-0000-00000000000a'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); o uuid; it uuid;
+begin
+  o := testes.orcamento(); it := testes.item(o, 1, 20, 8);
+  perform testes.impressao(it, 1, 1, array[a], array[10]);
+  perform testes.frete(o, 5, true);
+  perform public.aprovar_orcamento(o, 25);
+  perform public.cancelar_orcamento(o);
+  perform testes.igual((select bool_and(cancelada) from public.vendas where orcamento_id = o), true, 'todas canceladas');
+end $$;
+rollback;
+
+\echo '33. Pedro corrige só a cor do rolo; cor inválida é recusada'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); n int;
+begin
+  perform public.corrigir_cor_rolo(a, '#12ab9f');
+  perform testes.igual((select cor_hex from public.filamentos where id = a), '#12AB9F', 'cor trocada');
+  begin perform public.corrigir_cor_rolo(a, 'vermelho'); raise exception 'FALHOU: aceitou cor inválida';
+  exception when others then if sqlerrm like 'FALHOU%' then raise; end if; end;
+  update public.filamentos set custo_kg = 1 where id = a;
+  get diagnostics n = row_count;
+  perform testes.igual(n, 0, 'Pedro mudou o preço do rolo');
+end $$;
+rollback;
+
+\echo '34. login fora de perfis não corrige cor'
+begin; select testes.como('00000000-0000-0000-0000-00000000000c'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja');
+begin
+  begin perform public.corrigir_cor_rolo(a, '#000000'); raise exception 'FALHOU: estranho corrigiu cor';
+  exception when others then if sqlerrm like 'FALHOU%' then raise; end if; end;
+end $$;
+rollback;
+
+\echo '35. venda Frete segue os itens no banco (pago/entregue quando todos estão)'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); o uuid; i1 uuid; i2 uuid; v1 uuid; v2 uuid;
+begin
+  o := testes.orcamento(); i1 := testes.item(o, 1, 10, 4); i2 := testes.item(o, 1, 10, 4);
+  perform testes.impressao(i1, 1, 1, array[a], array[5]); perform testes.impressao(i2, 1, 1, array[a], array[5]);
+  perform testes.frete(o, 6, true);
+  perform public.aprovar_orcamento(o, 26);
+  select id into v1 from public.vendas where orcamento_item_id = i1; select id into v2 from public.vendas where orcamento_item_id = i2;
+  update public.vendas set pago = true, entregue = true where id = v1;
+  perform testes.igual((select pago from public.vendas where orcamento_id = o and descricao = 'Frete'), false, 'frete pago com um item só');
+  update public.vendas set pago = true where id = v2;
+  perform testes.igual((select pago from public.vendas where orcamento_id = o and descricao = 'Frete'), true, 'frete pago com os dois');
+  perform testes.igual((select entregue from public.vendas where orcamento_id = o and descricao = 'Frete'), false, 'frete entregue antes da hora');
+  update public.vendas set pago = false where id = v1;
+  perform testes.igual((select pago from public.vendas where orcamento_id = o and descricao = 'Frete'), false, 'frete voltou a não pago');
 end $$;
 rollback;
 

@@ -31,3 +31,16 @@ test('desconto só aparece quando existe', () => {
   const sem = { ...dados, descontoPct: 0, subtotal: 85.5, total: 85.5 };
   assert.ok(!texto(gerarPdfOrcamento(jsPDF, sem)).includes('Desconto'));
 });
+
+test('frete do cliente aparece como linha e soma no total; frete grátis aparece como grátis', () => {
+  const com = texto(gerarPdfOrcamento(jsPDF, { ...dados, frete: 12.5, freteCliente: true, total: 98 }));
+  assert.ok(com.includes('Frete') && com.includes('R$ 12,50') && com.includes('R$ 98,00'));
+  const gratis = texto(gerarPdfOrcamento(jsPDF, { ...dados, frete: 12.5, freteCliente: false }));
+  assert.ok(gratis.includes('Frete') && gratis.includes('gr') && !gratis.includes('R$ 12,50'));
+  assert.ok(!texto(gerarPdfOrcamento(jsPDF, dados)).includes('Frete'));
+});
+
+test('desconto com frete do cliente mostra só o desconto dos itens', () => {
+  const t = texto(gerarPdfOrcamento(jsPDF, { ...dados, subtotal: 20, descontoPct: 10, totalItens: 18, frete: 12.5, freteCliente: true, total: 30.5 }));
+  assert.ok(t.includes('- R$ 2,00'), 'desconto deveria ser R$ 2,00');
+});

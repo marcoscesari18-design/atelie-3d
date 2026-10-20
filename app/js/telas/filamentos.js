@@ -3,6 +3,7 @@
 import { h, vazio, erroTela, avisar, dialogo, campo, confirmar } from '../ui.js';
 import { brl, gramas } from '../formato.js';
 import { estadoRolo } from '../estoque.js';
+import { pegarCorPorFoto } from '../cor-foto.js';
 
 const TIPOS = ['PLA', 'PLA Silk', 'PLA Matte', 'PETG', 'TPU', 'ABS', 'ASA'];
 const MOTIVOS = { rolo_novo: 'Rolo novo', aprovacao: 'Orçamento aprovado', reimpressao: 'Reimpressão', cancelamento: 'Cancelamento', ajuste: 'Ajuste' };
@@ -71,7 +72,7 @@ async function detalhe(ctx, f) {
         h('br'), h('small', { class: 'meta' }, new Date(m.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))),
       h('span', { class: `v ${m.gramas > 0 ? 'positivo' : ''}` }, `${m.gramas > 0 ? '+' : '−'}${gramas(Math.abs(m.gramas))}`))));
   const e = estadoRolo(f.gramas_restantes, f.gramas_iniciais);
-  const botoes = [{ texto: 'Fechar', valor: null }];
+  const botoes = [{ texto: 'Conferir a cor por foto', valor: 'cor' }, { texto: 'Fechar', valor: null }];
   if (marcos) botoes.unshift({ texto: 'Mais ações', valor: 'acoes', primario: true });
   const escolha = await dialogo({
     titulo: `${f.cor_nome} · ${f.tipo}`,
@@ -82,6 +83,15 @@ async function detalhe(ctx, f) {
     botoes,
   });
   if (escolha === 'acoes') acoesMarcos(ctx, f);
+  if (escolha === 'cor') conferirCor(ctx, f);
+}
+
+// Pedro e Marcos: a foto só serve para acertar a cor; o banco troca só cor_hex (função corrigir_cor_rolo).
+async function conferirCor(ctx, f) {
+  const cor = await pegarCorPorFoto(f.cor_hex);
+  if (!cor || cor.toUpperCase() === String(f.cor_hex).toUpperCase()) return;
+  const r = await ctx.db.rpc('corrigir_cor_rolo', { p_filamento: f.id, p_cor: cor });
+  if (r.erro) avisar(r.erro, 'erro'); else { avisar('Cor do rolo atualizada ✓'); ctx.atualizar(); }
 }
 
 async function acoesMarcos(ctx, f) {
@@ -135,13 +145,16 @@ async function formRolo(ctx, f = null, rascunho = null) {
   if (!TIPOS.includes(v.tipo)) tipo.append(h('option', { value: v.tipo, selected: true }, v.tipo));
   const cor = h('input', { type: 'text', value: v.cor_nome, placeholder: 'Laranja' });
   const hex = h('input', { type: 'color', value: String(v.cor_hex).toLowerCase() });
+  const porFoto = h('button', { class: 'btn btn-foto', type: 'button', onclick: async () => {
+    const c = await pegarCorPorFoto(hex.value); if (c) hex.value = c.toLowerCase();
+  } }, 'Pegar a cor por foto');
   const custo = h('input', { type: 'number', inputmode: 'decimal', min: '0', step: '0.01', value: v.custo_kg, placeholder: 'o que você pagou' });
   const ini = h('input', { type: 'number', inputmode: 'decimal', min: '0', step: '1', value: v.gramas_iniciais });
   const slot = h('select', {}, h('option', { value: '' }, 'Gaveta (fora do AMS)'),
     [1, 2, 3, 4].map((n) => h('option', { value: String(n), selected: Number(v.slot_ams) === n }, `AMS ${n}`)));
   const ok = await dialogo({
     titulo: f ? 'Editar rolo' : 'Novo rolo',
-    conteudo: h('div', {}, campo('Marca', marca), campo('Tipo', tipo), h('div', { class: 'grade-2' }, campo('Nome da cor', cor), campo('Cor', hex)),
+    conteudo: h('div', {}, campo('Marca', marca), campo('Tipo', tipo), h('div', { class: 'grade-2' }, campo('Nome da cor', cor), campo('Cor', hex)), porFoto,
       campo('R$ por kg', custo, 'Preço real pago no rolo — é o que a calculadora usa.'),
       f ? null : campo('Gramas do rolo', ini), campo('Onde está', slot)),
     botoes: [{ texto: 'Voltar', valor: false }, { texto: 'Salvar', valor: true, primario: true }],

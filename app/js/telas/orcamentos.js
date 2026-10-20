@@ -28,7 +28,7 @@ export async function render(tela, ctx) {
 async function lista(tela, ctx) {
   const marcos = ctx.perfil.papel === 'marcos';
   const r = await ctx.db.listar('orcamentos', (q) => {
-    let c = q.select('id, numero, cliente, status, linha, total_aceito, created_at, orcamento_itens(preco_total)').order('numero', { ascending: false }).limit(100);
+    let c = q.select('id, numero, cliente, status, linha, total_aceito, frete, frete_cliente, created_at, orcamento_itens(preco_total)').order('numero', { ascending: false }).limit(100);
     if (!marcos) c = c.eq('linha', 'pedro');
     return c;
   });
@@ -51,7 +51,7 @@ async function lista(tela, ctx) {
       h('span', { class: 'chip atencao' }, 'Não salvo')));
   }
   for (const o of itens) {
-    const total = o.total_aceito ?? o.orcamento_itens.reduce((s, i) => s + Number(i.preco_total), 0);
+    const total = o.total_aceito ?? o.orcamento_itens.reduce((s, i) => s + Number(i.preco_total), 0) + (o.frete_cliente !== false ? Number(o.frete) || 0 : 0);
     listaEl.append(h('a', { class: `item ${o.linha === 'b2b' ? 'linha-b2b' : ''}`, href: `#orcamentos/${o.id}` },
       h('div', { class: 'corpo' },
         h('div', { class: 'titulo' }, o.cliente),
@@ -152,6 +152,15 @@ function desenhar(est) {
     col.append(h('div', { class: 'card', style: { marginTop: '12px' } }, campo('Desconto do pacote (%)', desc, 'Vale para o orçamento todo.')));
   }
 
+  // Frete: começa vazio; quem paga aparece só quando há valor
+  const frete = h('input', { type: 'number', inputmode: 'decimal', min: '0', step: '0.5', value: Number(r.frete) > 0 ? r.frete : '', placeholder: 'sem frete' });
+  const quemPaga = h('div', { class: 'segmentado', role: 'group', 'aria-label': 'Quem paga o frete' },
+    [[true, 'Cliente paga'], [false, 'Frete grátis (eu pago)']].map(([v, t]) => h('button', { type: 'button', 'aria-pressed': String((r.freteCliente !== false) === v),
+      onclick: (e) => { r.freteCliente = v; quemPaga.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); mudou(); } }, t)));
+  const blocoQuem = h('div', { class: `campo ${Number(r.frete) > 0 ? '' : 'oculto'}` }, h('span', { class: 'rotulo' }, 'Quem paga o frete?'), quemPaga);
+  frete.addEventListener('input', () => { r.frete = frete.value === '' ? 0 : Number(frete.value); blocoQuem.classList.toggle('oculto', !(Number(frete.value) > 0)); mudou(); });
+  col.append(h('div', { class: 'card', style: { marginTop: '12px' } }, campo('Frete (R$)', frete, 'Deixe vazio se o cliente busca a peça.'), blocoQuem));
+
   est.resumoEl = h('div', { class: 'card resumo' });
   est.problemasEl = h('div', {});
   lado.append(est.resumoEl, est.problemasEl);
@@ -183,7 +192,9 @@ function atualizarResumo(est) {
   const marcos = ctx.perfil.papel === 'marcos';
   limpar(est.resumoEl).append(...[
     c.desconto ? h('div', { class: 'linha-dado' }, h('span', {}, 'Subtotal'), h('span', { class: 'v' }, brl(c.subtotal))) : null,
-    c.desconto ? h('div', { class: 'linha-dado' }, h('span', {}, `Desconto (${c.desconto}%)`), h('span', { class: 'v' }, `− ${brl(c.subtotal - c.total)}`)) : null,
+    c.desconto ? h('div', { class: 'linha-dado' }, h('span', {}, `Desconto (${c.desconto}%)`), h('span', { class: 'v' }, `− ${brl(c.subtotal - c.totalItens)}`)) : null,
+    c.frete > 0 ? h('div', { class: 'linha-dado' }, h('span', {}, c.freteCliente ? 'Frete' : 'Frete grátis (você paga)'),
+      h('span', { class: 'v' }, c.freteCliente ? brl(c.frete) : `− ${brl(c.frete)} do lucro`)) : null,
     h('div', { class: 'linha-dado total' }, h('span', {}, 'Total para o cliente'), h('span', { class: 'v' }, brl(c.total))),
     marcos ? h('div', { class: 'linha-dado' }, h('span', { class: 'meta' }, 'Custo'), h('span', { class: 'v meta' }, brl(c.custo))) : null,
     marcos ? h('div', { class: 'linha-dado' }, h('span', { class: 'meta' }, 'Lucro'), h('span', { class: `v ${c.lucro < 0 ? 'msg-erro' : 'positivo'}` }, brl(c.lucro))) : null].filter(Boolean));
@@ -389,17 +400,28 @@ async function pdf(est) {
   const doc = gerarPdfOrcamento(window.jspdf.jsPDF, {
     numero: r.numero, cliente: r.cliente, contato: r.contato, data: r.createdAt ? dataBrasilia(r.createdAt) : hoje, validade,
     itens: await Promise.all(r.itens.map(async (it, i) => ({ descricao: it.descricao, qtd: it.qtd, precoUnit: calc.itens[i].precoUnit, foto: await fotoParaPdf(ctx, it) }))),
-    subtotal: calc.subtotal, descontoPct: calc.desconto, total: r.totalAceito ?? calc.total,
+    subtotal: calc.subtotal, totalItens: calc.totalItens, descontoPct: calc.desconto, frete: calc.frete, freteCliente: calc.freteCliente, total: r.totalAceito ?? calc.total,
     marca: { nome: apoio.marca.nome, fone: apoio.marca.fone, instagram: apoio.marca.instagram, logo },
   });
   const nome = `${numeroOrc(r.numero)} ${r.cliente}.pdf`.replace(/[\\/:*?"<>|]/g, '');
   const blob = doc.output('blob');
   const arquivo = new File([blob], nome, { type: 'application/pdf' });
+  const baixar = () => { const a = h('a', { href: URL.createObjectURL(blob), download: nome }); document.body.append(a); a.click(); a.remove(); return 'baixou'; };
+  let feito;
   if (navigator.canShare?.({ files: [arquivo] })) {
-    try { await navigator.share({ files: [arquivo], title: nome }); } catch { /* cancelou o compartilhamento */ }
+    // iPhone: o share precisa do toque "fresco" — por isso um botão depois que o PDF ficou pronto
+    feito = await dialogo({ titulo: 'PDF pronto', conteudo: `${nome}`, botoes: [
+      { texto: 'Baixar', valor: baixar },
+      { texto: 'Compartilhar', primario: true, valor: () => navigator.share({ files: [arquivo], title: nome }).then(() => 'enviou',
+        (e) => (e?.name === 'AbortError' ? null : 'falhou')) }] });
+    if (feito === 'falhou') {   // o compartilhar não abriu: oferece baixar, com um toque novo
+      feito = await dialogo({ titulo: 'Não abriu o compartilhar', conteudo: 'Baixe o PDF e mande pelo WhatsApp.',
+        botoes: [{ texto: 'Voltar', valor: null }, { texto: 'Baixar o PDF', valor: baixar, primario: true }] });
+    }
   } else {
-    const a = h('a', { href: URL.createObjectURL(blob), download: nome }); document.body.append(a); a.click(); a.remove();
+    feito = baixar();
   }
+  if (!feito) return;   // desistiu: não marca como enviado
   if (r.status === 'rascunho') {
     const m = await ctx.db.rpc('marcar_orcamento', { p_id: r.id, p_status: 'enviado' });
     if (!m.erro) { r.status = 'enviado'; desenhar(est); }
@@ -462,6 +484,7 @@ function visualizar(est) {
     h('div', { class: 'linha-dado' }, h('span', {}, 'Canal'), h('span', {}, CANAIS[r.canal] || r.canal))));
   tela.append(h('p', { class: 'secao' }, 'Itens'), h('div', { class: 'card' }, r.itens.map((it, i) =>
     h('div', { class: 'linha-dado' }, h('span', {}, `${it.qtd}× ${it.descricao}`), h('span', { class: 'v' }, brl(calc.itens[i].precoUnit * it.qtd)))),
+  calc.frete > 0 ? h('div', { class: 'linha-dado' }, h('span', {}, 'Frete'), h('span', { class: 'v' }, calc.freteCliente ? brl(calc.frete) : 'grátis')) : null,
   h('div', { class: 'linha-dado total' }, h('span', {}, 'Total'), h('span', { class: 'v' }, brl(r.totalAceito ?? calc.total)))));
   const acoes = h('div', { class: 'acoes' }, botao('PDF de novo', () => pdf(est), 'btn'));
   if (r.status === 'aprovado') {

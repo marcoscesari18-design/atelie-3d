@@ -59,7 +59,11 @@ export function gerarPdfOrcamento(JsPDF, d) {
   if (Number(d.descontoPct) > 0) {
     doc.text('Subtotal', 150, y, { align: 'right' }); doc.setTextColor(...escuro); doc.text(brl(d.subtotal), W - M, y, { align: 'right' }); y += 7;
     doc.setTextColor(...dim); doc.text(`Desconto (${String(d.descontoPct).replace('.', ',')}%)`, 150, y, { align: 'right' });
-    doc.setTextColor(...escuro); doc.text('- ' + brl(Number(d.subtotal) - Number(d.total)), W - M, y, { align: 'right' }); y += 9;
+    doc.setTextColor(...escuro); doc.text('- ' + brl(Number(d.subtotal) - Number(d.totalItens ?? d.total)), W - M, y, { align: 'right' }); y += 9;
+  }
+  if (Number(d.frete) > 0) {   // frete fora do desconto; frete grátis aparece escrito, sem valor
+    doc.setTextColor(...dim); doc.text('Frete', 150, y, { align: 'right' });
+    doc.setTextColor(...escuro); doc.text(d.freteCliente === false ? 'grátis' : brl(d.frete), W - M, y, { align: 'right' }); y += 9;
   }
   doc.setFillColor(...laranja); doc.roundedRect(110, y - 6, W - M - 110, 14, 3, 3, 'F');
   doc.setTextColor(26, 14, 5); doc.setFont('helvetica', 'bold'); doc.setFontSize(13);

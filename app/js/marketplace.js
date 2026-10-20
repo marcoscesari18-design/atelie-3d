@@ -10,6 +10,17 @@ function configCanal(canal, t) {
   throw new Error(`canal desconhecido: ${canal}`);
 }
 
+// Venda direta (escola, WhatsApp, feira): sem comissão nem taxa. Anuncia pelo preço sugerido (custo + lucro).
+// Frete: cliente paga → soma no que ele paga e não é lucro; frete grátis → o cliente paga só o preço e o frete sai do lucro.
+export function precoDireto({ custoTotal, lucroAlvo, frete = 0, freteCliente = true }) {
+  const preco = custoTotal + lucroAlvo;
+  const f = Math.max(0, Number(frete) || 0);
+  const clientePaga = preco + (freteCliente ? f : 0);
+  const lucro = lucroAlvo - (freteCliente ? 0 : f);
+  return { preco, arredondado: arredondar(preco), clientePaga, recebe: clientePaga, comissao: 0, frete: f, freteCliente, lucro,
+    alerta: lucro < 0 ? 'prejuizo' : null };
+}
+
 export function precoMarketplace({ custoTotal, lucroAlvo, canal, taxas }) {
   const cfg = configCanal(canal, taxas);
   const precoCom = (fixa, frete) => {
