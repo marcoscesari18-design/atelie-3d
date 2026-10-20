@@ -50,6 +50,7 @@ export function calcularOrcamento({ itens, descontoPct = 0 }) {
   const subtotal = r2(brutos.reduce((s, v) => s + v, 0));
   const total = r2(subtotal * (1 - descontoPct / 100));
   const linhas = brutos.map((b) => ({ precoTotal: r2(b * (1 - descontoPct / 100)) }));
+  if (linhas.length === 0) return { subtotal, total, linhas };
   const somaCent = linhas.reduce((s, l) => s + Math.round(l.precoTotal * 100), 0);
   linhas[linhas.length - 1].precoTotal = r2(linhas[linhas.length - 1].precoTotal + (Math.round(total * 100) - somaCent) / 100);
   return { subtotal, total, linhas };
