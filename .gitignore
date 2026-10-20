@@ -1,0 +1,15 @@
+.DS_Store
+node_modules/
+.env
+.superpowers/
+CLAUDE.md
+BRIEFING.md
+referencia_precifica3d_original.html
+tests/fixtures-locais/
+*.3mf
+!tests/fixtures/*.3mf
+supabase/.temp/
+supabase/.branches/
+docs/specs/
+docs/plans/
+docs/revisoes/
