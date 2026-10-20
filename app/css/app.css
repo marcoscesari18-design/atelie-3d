@@ -151,3 +151,24 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
 .toast.ok { border-color: rgba(123,214,106,.5); } .toast.erro { border-color: rgba(255,107,94,.6); }
 .foto-placa { width: 72px; height: 72px; object-fit: cover; border-radius: var(--raio-p); background: var(--sup); flex: none; }
 .oculto { display: none !important; }
+
+/* ---------- filamentos ---------- */
+.grade-rolos { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.rolo { display: flex; flex-direction: column; text-align: left; padding: 0; overflow: hidden; cursor: pointer;
+  background: var(--card); border: 1px solid var(--linha-suave); border-radius: var(--raio); color: inherit; }
+.rolo:hover { border-color: var(--linha); }
+.rolo.arquivado { opacity: .5; }
+.rolo-cor { position: relative; display: block; height: 72px; border-bottom: 1px solid rgba(0,0,0,.25); }
+.rolo-cor.pequena { width: 56px; height: 56px; border-radius: var(--raio-p); border: 1px solid rgba(255,255,255,.2); flex: none; }
+.rolo-ams { position: absolute; top: 8px; left: 8px; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 99px; background: rgba(0,0,0,.6); color: #fff; }
+.rolo-info { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 12px; }
+.rolo-nome { font-weight: 600; }
+.rolo-tipo { color: var(--dim); font-size: 13px; margin-top: -4px; }
+.rolo-rodape { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 14px; }
+.rolo-custo { color: var(--fraco); font-size: 12px; }
+.detalhe-rolo { display: flex; gap: 12px; align-items: center; }
+.grande { font-size: 22px; font-weight: 700; }
+.meta { color: var(--dim); }
+.positivo { color: var(--ok); }
+.dialogo-acoes .btn { flex: 1 1 140px; }
+.dialogo { max-height: 90vh; overflow: auto; }
