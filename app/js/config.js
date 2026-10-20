@@ -10,8 +10,8 @@ export const SUPABASE = LOCAL
       key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0',
     }
   : {
-      url: '', // preencher na Task 7 com a Project URL do projeto atelie-3d
-      key: '', // preencher na Task 7 com a Publishable key (sb_publishable_…)
+      url: 'https://emxeeiixrnizpimeyqqw.supabase.co', // projeto atelie-3d, conta pessoal, sa-east-1
+      key: 'sb_publishable_liW3jmGhKrN2eJD-F-ou3w_k52udLXX', // publishable: pública por natureza; a proteção é o RLS
     };
 
 export const AMBIENTE = LOCAL ? 'teste local' : 'produção';
