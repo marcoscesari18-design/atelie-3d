@@ -1,0 +1,67 @@
+// Único ponto de contato com o Supabase. Tudo devolve { dados, erro } com erro em português.
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import { SUPABASE } from './config.js';
+import { traduzirErro } from './erros.js';
+
+export const cliente = createClient(SUPABASE.url, SUPABASE.key, {
+  auth: { persistSession: true, autoRefreshToken: true },
+});
+
+const resultado = (r) => ({ dados: r.error ? null : r.data, erro: r.error ? traduzirErro(r.error) : null });
+async function seguro(fn) {
+  try { return resultado(await fn()); } catch (e) { return { dados: null, erro: traduzirErro(e) }; }
+}
+
+export async function entrar(email, senha) {
+  return seguro(() => cliente.auth.signInWithPassword({ email: email.trim(), password: senha }));
+}
+
+export async function sair() { await cliente.auth.signOut(); }
+
+export async function usuario() {
+  const { data } = await cliente.auth.getSession();
+  return data.session?.user ?? null;
+}
+
+export function aoMudarSessao(fn) {
+  return cliente.auth.onAuthStateChange((evento, sessao) => fn(evento, sessao));
+}
+
+// { papel: 'marcos'|'pedro', nome } ou null se o login não está em perfis
+export async function perfil() {
+  const u = await usuario();
+  if (!u) return { dados: null, erro: null };
+  return seguro(() => cliente.from('perfis').select('papel, nome').eq('user_id', u.id).maybeSingle());
+}
+
+// consulta(tabela) → builder do supabase-js; use .listar(q => q.select(...).eq(...))
+export async function listar(tabela, montar = (q) => q.select('*')) {
+  return seguro(() => montar(cliente.from(tabela)));
+}
+
+export async function inserir(tabela, linha, colunas = '*') {
+  return seguro(() => cliente.from(tabela).insert(linha).select(colunas).single());
+}
+
+export async function atualizar(tabela, id, mudancas, colunas = '*') {
+  return seguro(() => cliente.from(tabela).update(mudancas).eq('id', id).select(colunas).maybeSingle());
+}
+
+export async function apagar(tabela, id) {
+  return seguro(() => cliente.from(tabela).delete().eq('id', id));
+}
+
+export async function rpc(nome, args) {
+  return seguro(() => cliente.rpc(nome, args));
+}
+
+export async function foto(caminho) {
+  if (!caminho) return { dados: null, erro: null };
+  return seguro(() => cliente.storage.from('fotos').download(caminho));
+}
+
+export async function enviarFoto(blob) {
+  const caminho = `${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}.png`;
+  const r = await seguro(() => cliente.storage.from('fotos').upload(caminho, blob, { contentType: blob.type || 'image/png' }));
+  return r.erro ? r : { dados: caminho, erro: null };
+}
