@@ -42,13 +42,13 @@ export async function render(tela, ctx) {
   if (pendentes.length) {
     tela.append(h('p', { class: 'secao' }, 'Para imprimir'));
     if (atrasadas.length) tela.append(h('p', { class: 'aviso' }, `${atrasadas.length} ficou(aram) da semana passada.`));
-    tela.append(h('div', { class: 'lista' }, pendentes.map((t) => cartao(t, tarefas, ctx))));
+    tela.append(h('div', { class: 'lista grade-tarefas' }, pendentes.map((t) => cartao(t, tarefas, ctx))));
   }
-  if (resto.length) tela.append(h('p', { class: 'secao' }, 'Já impressas'), h('div', { class: 'lista' }, resto.map((t) => cartao(t, tarefas, ctx))));
+  if (resto.length) tela.append(h('p', { class: 'secao' }, 'Já impressas'), h('div', { class: 'lista grade-tarefas' }, resto.map((t) => cartao(t, tarefas, ctx))));
 
   const licoes = tarefas.filter((t) => t.status === 'falhou' && t.aprendizado);
   if (licoes.length) {
-    tela.append(h('p', { class: 'secao' }, 'O que aprendemos'), h('div', { class: 'card' }, licoes.map((t) =>
+    tela.append(h('p', { class: 'secao' }, 'O que aprendemos'), h('div', { class: 'card licoes' }, licoes.map((t) =>
       h('div', { class: 'licao' }, h('strong', {}, t.titulo), h('p', {}, h('span', { class: 'meta' }, 'O que houve: '), t.motivo_falha),
         h('p', {}, h('span', { class: 'meta' }, 'Da próxima vez: '), t.aprendizado)))));
   }

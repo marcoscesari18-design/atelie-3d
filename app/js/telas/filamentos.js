@@ -27,26 +27,38 @@ export async function render(tela, ctx) {
     return;
   }
 
-  const grade = h('div', { class: 'grade-rolos' });
-  for (const f of rolos) {
-    const e = estadoRolo(f.gramas_restantes, f.gramas_iniciais);
-    grade.append(h('button', { class: `rolo ${f.ativo ? '' : 'arquivado'}`, type: 'button', onclick: () => detalhe(ctx, f) },
-      h('span', { class: 'rolo-cor', style: { background: f.cor_hex } },
-        f.slot_ams ? h('span', { class: 'rolo-ams' }, `AMS ${f.slot_ams}`) : null),
-      h('span', { class: 'rolo-info' },
-        h('span', { class: 'rolo-nome' }, f.cor_nome),
-        h('span', { class: 'rolo-tipo' }, `${f.tipo} · ${f.marca}`),
-        h('span', { class: `barra ${e.nivel}`, role: 'img', 'aria-label': `${e.pct}% do rolo` }, h('span', { style: { width: `${e.pct}%` } })),
-        h('span', { class: 'rolo-rodape' },
-          h('span', { class: 'num' }, gramas(f.gramas_restantes)),
-          f.ativo ? h('span', { class: `chip ${e.nivel}` }, e.rotulo) : h('span', { class: 'chip' }, 'Arquivado')),
-        marcos ? h('span', { class: 'rolo-custo num' }, `${brl(f.custo_kg)}/kg`) : null)));
+  // agrupado pelo material (é o que o .3mf pede); dentro do grupo, a ordem do banco
+  const grupos = new Map();
+  for (const f of rolos) { const t = f.tipo || 'Outros'; if (!grupos.has(t)) grupos.set(t, []); grupos.get(t).push(f); }
+  for (const [tipo, lista] of grupos) {
+    tela.append(h('h2', { class: 'grupo' }, tipo, h('span', { class: 'grupo-n' }, plural(lista.length, 'rolo', 'rolos'))),
+      h('div', { class: 'grade-rolos' }, lista.map((f) => cartaoRolo(f, ctx, marcos))));
   }
-  tela.append(grade);
   if (r.dados.some((f) => !f.ativo)) {
     tela.append(h('div', { class: 'acoes' }, h('button', { class: 'btn-link', type: 'button',
       onclick: () => { verArquivados = !verArquivados; ctx.atualizar(); } }, verArquivados ? 'Esconder arquivados' : 'Mostrar arquivados')));
   }
+}
+
+// Carretel visto de frente: o fio enrolado encolhe até o miolo conforme o rolo acaba.
+export function carretel(f, classe = '') {
+  const e = estadoRolo(f.gramas_restantes, f.gramas_iniciais);
+  return h('span', { class: `carretel ${classe}`, role: 'img', 'aria-label': `${f.cor_nome}: ${e.pct}% do rolo`,
+    style: { '--cor': f.cor_hex, '--p': String(e.pct / 100) } }, h('span', { class: 'carretel-fio' }));
+}
+
+function cartaoRolo(f, ctx, marcos) {
+  const e = estadoRolo(f.gramas_restantes, f.gramas_iniciais);
+  return h('button', { class: `rolo ${f.ativo ? '' : 'arquivado'}`, type: 'button', onclick: () => detalhe(ctx, f) },
+    carretel(f),
+    h('span', { class: 'rolo-info' },
+      h('span', { class: 'rolo-nome' }, f.cor_nome),
+      h('span', { class: 'rolo-tipo' }, h('span', { class: 'rolo-marca' }, f.marca),
+        marcos ? h('span', { class: 'rolo-custo num' }, `${brl(f.custo_kg)}/kg`) : null,
+        f.slot_ams ? h('span', { class: 'rolo-ams' }, `AMS ${f.slot_ams}`) : null)),
+    h('span', { class: 'rolo-rodape' },
+      h('span', { class: 'num rolo-g' }, gramas(f.gramas_restantes)),
+      f.ativo ? h('span', { class: `chip ${e.nivel}` }, e.rotulo) : h('span', { class: 'chip' }, 'Arquivado')));
 }
 
 async function detalhe(ctx, f) {
@@ -64,7 +76,7 @@ async function detalhe(ctx, f) {
   const escolha = await dialogo({
     titulo: `${f.cor_nome} · ${f.tipo}`,
     conteudo: h('div', {},
-      h('div', { class: 'detalhe-rolo' }, h('span', { class: 'rolo-cor pequena', style: { background: f.cor_hex } }),
+      h('div', { class: 'detalhe-rolo' }, carretel(f, 'grande'),
         h('div', {}, h('div', { class: 'num grande' }, gramas(f.gramas_restantes)), h('span', { class: `chip ${e.nivel}` }, e.rotulo))),
       h('p', { class: 'secao' }, 'Últimos movimentos'), historico),
     botoes,

@@ -52,7 +52,7 @@ async function lista(tela, ctx) {
   }
   for (const o of itens) {
     const total = o.total_aceito ?? o.orcamento_itens.reduce((s, i) => s + Number(i.preco_total), 0);
-    listaEl.append(h('a', { class: 'item', href: `#orcamentos/${o.id}` },
+    listaEl.append(h('a', { class: `item ${o.linha === 'b2b' ? 'linha-b2b' : ''}`, href: `#orcamentos/${o.id}` },
       h('div', { class: 'corpo' },
         h('div', { class: 'titulo' }, o.cliente),
         h('div', { class: 'meta' }, numeroOrc(o.numero), ' · ', new Date(o.created_at).toLocaleDateString('pt-BR'),
@@ -107,9 +107,15 @@ function desenhar(est) {
   const titulo = r.id ? numeroOrc(r.numero) : 'Novo orçamento';
   tela.append(h('div', { class: 'cabeca' },
     h('div', {}, h('a', { href: '#orcamentos', class: 'btn-link' }, '← Orçamentos'), h('h1', {}, titulo)),
-    chipStatus(r.status)));
+    h('div', { class: 'chips' }, r.linha === 'b2b' ? h('span', { class: 'chip b2b' }, 'B2B') : null, chipStatus(r.status))));
   if (!EDITAVEL.includes(r.status)) return visualizar(est);
   if (r.alterado && r.id) tela.append(h('p', { class: 'aviso' }, 'Você tem alterações neste aparelho que ainda não foram salvas.'));
+  // computador: itens à esquerda, resumo e botões à direita (sempre à vista); celular: uma coluna, nesta ordem
+  const col = h('div', { class: 'editor-principal' });
+  const lado = h('aside', { class: 'editor-lado', 'aria-label': 'Resumo e ações', tabindex: '-1' });
+  // teclado: atalho para o resumo sem passar por todos os campos dos itens (só aparece ao receber foco)
+  tela.append(h('button', { class: 'pular', type: 'button', onclick: () => lado.focus() }, 'Ir para o resumo e Aprovar'),
+    h('div', { class: 'editor' }, col, lado));
 
   const marcos = ctx.perfil.papel === 'marcos';
   const mudou = () => { r.alterado = true; gravarLocal(r); atualizarResumo(est); };
@@ -127,15 +133,15 @@ function desenhar(est) {
       [['pedro', 'Lojinha do Pedro'], ['b2b', 'Cliente B2B']].map(([v, t]) => h('button', { type: 'button', 'aria-pressed': String(r.linha === v),
         onclick: () => { r.linha = v; mudou(); desenhar(est); } }, t)))));
   }
-  tela.append(cliente);
+  col.append(cliente);
 
   // Itens
-  tela.append(h('p', { class: 'secao' }, 'Itens'));
+  col.append(h('p', { class: 'secao' }, 'Itens'));
   const calc = calcularRascunho(r, est.apoio.rolos, est.apoio.params);
-  r.itens.forEach((item, i) => tela.append(cartaoItem(est, item, i, calc.itens[i], mudou)));
+  r.itens.forEach((item, i) => col.append(cartaoItem(est, item, i, calc.itens[i], mudou)));
   const entrada = h('input', { type: 'file', accept: '.3mf', class: 'oculto' });
   entrada.addEventListener('change', () => { const f = entrada.files[0]; entrada.value = ''; if (f) adicionar3mf(est, f, null); });
-  tela.append(entrada, h('div', { class: 'acoes' },
+  col.append(entrada, h('div', { class: 'acoes acoes-itens' },
     h('button', { class: 'btn btn-largo', type: 'button', onclick: () => entrada.click() }, '+ Item: subir .3mf fatiado'),
     est.apoio.produtos.length ? h('button', { class: 'btn btn-largo', type: 'button', onclick: () => usarProduto(est) }, '+ Item: produto salvo') : null));
 
@@ -143,12 +149,12 @@ function desenhar(est) {
   if (r.itens.length > 1) {
     const desc = h('input', { type: 'number', inputmode: 'decimal', min: '0', max: '99', step: '1', value: r.descontoPct || '' , placeholder: '0' });
     desc.addEventListener('input', () => { r.descontoPct = Number(desc.value) || 0; mudou(); });
-    tela.append(h('div', { class: 'card', style: { marginTop: '12px' } }, campo('Desconto do pacote (%)', desc, 'Vale para o orçamento todo.')));
+    col.append(h('div', { class: 'card', style: { marginTop: '12px' } }, campo('Desconto do pacote (%)', desc, 'Vale para o orçamento todo.')));
   }
 
-  est.resumoEl = h('div', { class: 'card', style: { marginTop: '12px' } });
+  est.resumoEl = h('div', { class: 'card resumo' });
   est.problemasEl = h('div', {});
-  tela.append(est.resumoEl, est.problemasEl);
+  lado.append(est.resumoEl, est.problemasEl);
   atualizarResumo(est);
 
   // Ações
@@ -156,7 +162,7 @@ function desenhar(est) {
     botao('Salvar', () => salvar(est), 'btn'),
     botao('PDF', () => pdf(est), 'btn'),
     botao('Aprovar', () => aprovar(est), 'btn btn-primario'));
-  tela.append(acoes, h('div', { class: 'acoes' },
+  lado.append(acoes, h('div', { class: 'acoes acoes-secundarias' },
     r.id ? botao('Cliente recusou', () => recusar(est), 'btn btn-perigo') : null,
     r.alterado || !r.id ? botao(r.id ? 'Descartar alterações' : 'Descartar', async () => {
       if (!(await confirmar('Descartar?', 'O que não foi salvo será perdido.', 'Descartar'))) return;
@@ -449,6 +455,7 @@ async function recusar(est) {
 function visualizar(est) {
   const { r, apoio, ctx, tela } = est;
   const calc = calcularRascunho(r, apoio.rolos, apoio.params);
+  tela.classList.add('leitura');
   tela.append(h('div', { class: 'card' },
     h('div', { class: 'linha-dado' }, h('span', {}, 'Cliente'), h('span', {}, r.cliente)),
     r.contato ? h('div', { class: 'linha-dado' }, h('span', {}, 'Contato'), h('span', {}, r.contato)) : null,

@@ -45,7 +45,7 @@ export async function render(tela, ctx) {
     tela.append(vazio('Nenhuma venda ainda neste mês.', h('button', { class: 'btn btn-primario', type: 'button', onclick: () => registrar(ctx) }, 'Registrar a primeira venda')));
     return;
   }
-  tela.append(h('div', { class: 'lista', style: { marginTop: '12px' } }, lista.map((v) => cartao(v, ctx))));
+  tela.append(h('div', { class: 'lista lista-vendas', style: { marginTop: '12px' } }, lista.map((v) => cartao(v, ctx))));
 }
 
 function cartao(v, ctx) {
@@ -54,7 +54,7 @@ function cartao(v, ctx) {
     if (x.erro) return avisar(x.erro, 'erro');
     ctx.atualizar();
   };
-  return h('div', { class: `card venda ${v.cancelada ? 'cancelada' : ''}` },
+  return h('div', { class: `card venda ${v.cancelada ? 'cancelada' : ''} ${v.linha === 'b2b' ? 'linha-b2b' : ''}` },
     h('div', { class: 'tarefa-topo' },
       h('div', { class: 'corpo' },
         h('div', { class: 'titulo' }, v.cliente, v.linha === 'b2b' ? h('span', { class: 'chip b2b', style: { marginLeft: '6px' } }, 'B2B') : null),

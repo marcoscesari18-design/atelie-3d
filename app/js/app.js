@@ -3,13 +3,31 @@ import * as db from './db.js';
 import { h, limpar, avisar, carregando, erroTela, campo, botao } from './ui.js';
 import { AMBIENTE } from './config.js';
 
+// Ícones de traço (24×24), desenhados para o app: folha de orçamento, calendário, carretel, moedas, controles.
+const ICONES = {
+  orcamentos: 'M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5',
+  semana: 'M4 6h16v14H4zM4 10h16M8 3v5M16 3v5M8 14h2M12 14h2',
+  filamentos: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
+  vendas: 'M4 7h16v11H4zM4 11h16M8 15h3',
+  ajustes: 'M5 6h14M5 12h14M5 18h14M9 4v4M15 10v4M8 16v4',
+};
 const ABAS = [
-  { id: 'orcamentos', rotulo: 'Orçamentos', icone: '🧾' },
-  { id: 'semana',     rotulo: 'Semana',     icone: '📅' },
-  { id: 'filamentos', rotulo: 'Filamentos', icone: '🎨' },
-  { id: 'vendas',     rotulo: 'Vendas',     icone: '💰' },
-  { id: 'ajustes',    rotulo: 'Ajustes',    icone: '⚙️', soMarcos: true },
+  { id: 'orcamentos', rotulo: 'Orçamentos' },
+  { id: 'semana',     rotulo: 'Semana' },
+  { id: 'filamentos', rotulo: 'Filamentos' },
+  { id: 'vendas',     rotulo: 'Vendas' },
+  { id: 'ajustes',    rotulo: 'Ajustes', soMarcos: true },
 ];
+const SVG = 'http://www.w3.org/2000/svg';
+function icone(id) {
+  const s = document.createElementNS(SVG, 'svg');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'aba-icone'); s.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS(SVG, 'path'); p.setAttribute('d', ICONES[id]);
+  s.append(p);
+  return s;
+}
+// Marca: um carretel visto de frente (o mesmo do ícone do app).
+const marca = () => h('span', { class: 'marca' }, h('span', { class: 'marca-carretel', 'aria-hidden': 'true' }), 'Ateliê 3D');
 
 const raiz = document.getElementById('app');
 let ctx = null;          // { db, perfil, ir }
@@ -22,6 +40,7 @@ function telaLogin(mensagem = '') {
   const senha = h('input', { type: 'password', autocomplete: 'current-password', required: true });
   const erro = h('p', { class: 'msg-erro', role: 'alert' }, mensagem);
   const form = h('form', { class: 'login', novalidate: true },
+    h('span', { class: 'marca-carretel login-carretel', 'aria-hidden': 'true' }),
     h('h1', {}, 'Ateliê 3D'),
     h('p', { class: 'sub' }, 'Orçamento, estoque e vendas do laboratório.'),
     campo('E-mail', email), campo('Senha', senha), erro,
@@ -56,13 +75,14 @@ function abaAtual() {
 function montarCasca() {
   const conteudo = h('main', { id: 'conteudo', class: 'conteudo', tabindex: '-1' });
   const nav = h('nav', { class: 'abas', 'aria-label': 'Seções' },
-    abasDoPerfil(ctx.perfil).map((a) => h('a', { href: `#${a.id}`, 'data-aba': a.id },
-      h('span', { class: 'aba-icone', 'aria-hidden': 'true' }, a.icone), h('span', {}, a.rotulo))));
+    abasDoPerfil(ctx.perfil).map((a) => h('a', { href: `#${a.id}`, 'data-aba': a.id }, icone(a.id), h('span', {}, a.rotulo))));
+  // nav dentro do header, entre a marca e o "Sair": a ordem do Tab é a mesma da barra lateral
   const topo = h('header', { class: 'topo' },
-    h('span', { class: 'marca' }, 'Ateliê 3D'),
-    h('span', { class: 'quem' }, ctx.perfil.nome,
-      h('button', { class: 'btn-link', type: 'button', onclick: async () => { await db.sair(); } }, 'sair')));
-  limpar(raiz).append(topo, conteudo, nav);
+    marca(), nav,
+    h('span', { class: 'quem' }, h('span', { class: 'quem-nome' }, ctx.perfil.nome),
+      h('button', { class: 'btn-link', type: 'button', onclick: async () => { await db.sair(); } }, 'Sair')));
+  // celular: barra de cima + abas fixas no rodapé; computador (≥1024 px): o header vira a barra lateral (só CSS)
+  limpar(raiz).append(topo, conteudo);
 }
 
 async function renderizar() {

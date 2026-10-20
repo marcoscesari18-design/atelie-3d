@@ -35,13 +35,17 @@ export async function render(tela, ctx) {
   const marca = { nome: '', fone: '', instagram: '', logo_path: null, ...conf.marca };
 
   tela.append(h('h1', {}, 'Ajustes'), h('p', { class: 'sub' }, 'Valem para todos os orçamentos novos.'));
+  // computador: calculadora livre à esquerda, configurações à direita; celular: uma coluna
+  const colA = h('div', { class: 'ajustes-calc' });
+  const colB = h('div', { class: 'ajustes-config' });
+  tela.append(h('div', { class: 'ajustes' }, colA, colB));
 
   // ---------- calculadora livre ----------
-  tela.append(h('p', { class: 'secao' }, 'Calculadora livre (simular)'));
-  tela.append(calculadoraLivre(d, conf, rolos.dados));
+  colA.append(h('p', { class: 'secao' }, 'Calculadora livre (simular)'));
+  colA.append(calculadoraLivre(d, conf, rolos.dados));
 
   // ---------- parâmetros ----------
-  tela.append(h('p', { class: 'secao' }, 'Parâmetros da calculadora'));
+  colB.append(h('p', { class: 'secao' }, 'Parâmetros da calculadora'));
   const impressoras = conf.impressoras || [];
   const imp = h('select', {}, impressoras.map((p) => h('option', { value: p.id, selected: p.id === d.impressora }, p.nome)));
   const campos = Object.fromEntries(PARAMS.map(([k]) => [k, h('input', { type: 'number', inputmode: 'decimal', step: 'any', value: d[k] })]));
@@ -51,7 +55,7 @@ export async function render(tela, ctx) {
   });
   const regimes = conf.regimes || {};
   const regime = h('select', {}, Object.entries(regimes).map(([k, r]) => h('option', { value: k, selected: k === d.regime }, r.label)));
-  tela.append(h('div', { class: 'card' }, campo('Impressora', imp), h('div', { class: 'grade-2' }, PARAMS.map(([k, rot]) => campo(rot, campos[k]))),
+  colB.append(h('div', { class: 'card' }, campo('Impressora', imp), h('div', { class: 'grade-2' }, PARAMS.map(([k, rot]) => campo(rot, campos[k]))),
     campo('Regime de imposto', regime, regimes[d.regime]?.alerta || ''),
     h('div', { class: 'acoes' }, botao('Salvar parâmetros', async () => {
       const novo = { ...conf.defaults_calculadora, impressora: imp.value, regime: regime.value };
@@ -60,9 +64,9 @@ export async function render(tela, ctx) {
     }, 'btn btn-primario'))));
 
   // ---------- marketplaces ----------
-  tela.append(h('p', { class: 'secao' }, 'Taxas de marketplace'));
+  colB.append(h('p', { class: 'secao' }, 'Taxas de marketplace'));
   const taxas = Object.fromEntries(TAXAS.map(([k]) => [k, h('input', { type: 'number', inputmode: 'decimal', step: 'any', value: d[k] })]));
-  tela.append(h('div', { class: 'card' }, h('div', { class: 'grade-2' }, TAXAS.map(([k, rot]) => campo(rot, taxas[k]))),
+  colB.append(h('div', { class: 'card' }, h('div', { class: 'grade-2' }, TAXAS.map(([k, rot]) => campo(rot, taxas[k]))),
     h('div', { class: 'acoes' }, botao('Salvar taxas', async () => {
       const novo = { ...conf.defaults_calculadora };
       for (const [k] of TAXAS) novo[k] = num(taxas[k]);
@@ -70,7 +74,7 @@ export async function render(tela, ctx) {
     }, 'btn'))));
 
   // ---------- marca do PDF ----------
-  tela.append(h('p', { class: 'secao' }, 'Marca no PDF do orçamento'));
+  colB.append(h('p', { class: 'secao' }, 'Marca no PDF do orçamento'));
   const nome = h('input', { type: 'text', value: marca.nome, placeholder: 'ex.: Ateliê do Pedro' });
   const fone = h('input', { type: 'text', value: marca.fone, placeholder: '(44) 9…' });
   const ig = h('input', { type: 'text', value: marca.instagram, placeholder: '@…' });
@@ -78,7 +82,7 @@ export async function render(tela, ctx) {
   const previa = h('img', { class: 'foto-placa', alt: 'Logo atual' });
   if (marca.logo_path) ctx.db.foto(marca.logo_path).then((f) => { if (f.dados) previa.src = URL.createObjectURL(f.dados); });
   else previa.classList.add('oculto');
-  tela.append(h('div', { class: 'card' }, campo('Nome', nome), h('div', { class: 'grade-2' }, campo('Telefone', fone), campo('Instagram', ig)),
+  colB.append(h('div', { class: 'card' }, campo('Nome', nome), h('div', { class: 'grade-2' }, campo('Telefone', fone), campo('Instagram', ig)),
     h('div', { class: 'item-topo' }, previa, campo('Logo (PNG ou JPG, até 300 KB)', logo)),
     h('div', { class: 'acoes' }, botao('Salvar marca', async () => {
       const nova = { ...marca, nome: nome.value.trim(), fone: fone.value.trim(), instagram: ig.value.trim() };
@@ -92,7 +96,7 @@ export async function render(tela, ctx) {
     }, 'btn'))));
 
   // ---------- quem usa ----------
-  tela.append(h('p', { class: 'secao' }, 'Quem usa o app'), h('div', { class: 'card' },
+  colB.append(h('p', { class: 'secao' }, 'Quem usa o app'), h('div', { class: 'card' },
     perfis.dados.map((p) => h('div', { class: 'linha-dado' }, h('span', {}, p.nome), h('span', { class: 'chip' }, p.papel === 'marcos' ? 'vê tudo' : 'sem custos e sem B2B'))),
     h('p', { class: 'meta', style: { marginBottom: '0' } }, 'Novos logins são criados no painel do Supabase (cadastro aberto está desligado).')));
 }
