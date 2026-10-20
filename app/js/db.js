@@ -3,9 +3,10 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import { SUPABASE } from './config.js';
 import { traduzirErro } from './erros.js';
 
-export const cliente = createClient(SUPABASE.url, SUPABASE.key, {
-  auth: { persistSession: true, autoRefreshToken: true },
-});
+export const configurado = Boolean(SUPABASE.url && SUPABASE.key);
+export const cliente = configurado
+  ? createClient(SUPABASE.url, SUPABASE.key, { auth: { persistSession: true, autoRefreshToken: true } })
+  : null;
 
 const resultado = (r) => ({ dados: r.error ? null : r.data, erro: r.error ? traduzirErro(r.error) : null });
 async function seguro(fn) {
@@ -19,11 +20,13 @@ export async function entrar(email, senha) {
 export async function sair() { await cliente.auth.signOut(); }
 
 export async function usuario() {
+  if (!cliente) return null;
   const { data } = await cliente.auth.getSession();
   return data.session?.user ?? null;
 }
 
 export function aoMudarSessao(fn) {
+  if (!cliente) return null;
   return cliente.auth.onAuthStateChange((evento, sessao) => fn(evento, sessao));
 }
 

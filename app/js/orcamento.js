@@ -98,8 +98,8 @@ export function linhasParaBanco(r, calculo) {
     total: calculo.total,
     itens: r.itens.map((item, i) => ({
       descricao: item.descricao.trim(), qtd: Number(item.qtd), extras: Number(item.extras) || 0,
-      custo_total: r2(calculo.itens[i].custoItem), preco_total: calculo.linhas[i].precoTotal,
-      foto_path: item.fotoPath || null,
+      custo_total: r2(calculo.itens[i].custoItem), preco_unit: r2(calculo.itens[i].precoUnit), preco_total: calculo.linhas[i].precoTotal,
+      foto_path: item.fotoPath || null, produto_id: item.produtoId || null,
       impressoes: item.impressoes.map((imp) => ({
         arquivo_nome: imp.arquivo || null, vezes: Number(imp.vezes), unidades_por_vez: Number(imp.unidadesPorVez),
         placas: imp.placas.map((pl) => {
@@ -122,8 +122,9 @@ export function rascunhoDoBanco(o, rolos) {
     id: o.id, numero: o.numero, status: o.status, cliente: o.cliente, contato: o.contato || '', canal: o.canal, linha: o.linha,
     descontoPct: d, obs: o.obs || '', totalAceito: o.total_aceito, validade: o.validade, createdAt: o.created_at,
     itens: itens.map((it) => ({
-      id: it.id, descricao: it.descricao, qtd: it.qtd, extras: Number(it.extras) || 0, fotoPath: it.foto_path,
-      precoUnit: r2(Number(it.preco_total) / (itens.length > 1 ? 1 - d / 100 : 1) / it.qtd),
+      id: it.id, descricao: it.descricao, qtd: it.qtd, extras: Number(it.extras) || 0, fotoPath: it.foto_path, produtoId: it.produto_id || null,
+      // preço bruto guardado; orçamentos antigos (sem a coluna) reconstroem pelo total
+      precoUnit: it.preco_unit != null ? Number(it.preco_unit) : r2(Number(it.preco_total) / (itens.length > 1 ? 1 - d / 100 : 1) / it.qtd),
       impressoes: (it.orcamento_impressoes || []).map((m) => ({
         arquivo: m.arquivo_nome, vezes: m.vezes, unidadesPorVez: m.unidades_por_vez,
         placas: (m.orcamento_item_placas || []).sort((a, b) => a.placa - b.placa).map((p) => ({

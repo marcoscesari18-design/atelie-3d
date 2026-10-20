@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { brl, gramas, duracao, numeroOrc, segundaDaSemana, hojeISO, inicioDoMesISO } from '../app/js/formato.js';
+import { brl, gramas, duracao, numeroOrc, segundaDaSemana, hojeISO, inicioDoMesISO, dataBrasilia } from '../app/js/formato.js';
 import { traduzirErro } from '../app/js/erros.js';
 
 const nb = (s) => s.replace(/ /g, ' ');
@@ -62,4 +62,9 @@ test('hojeISO usa a data local, não a de Londres', () => {
   assert.equal(hojeISO(noite), '2026-10-19');
   assert.equal(hojeISO(noite, 7), '2026-10-26');
   assert.equal(inicioDoMesISO(noite), '2026-10-01');
+});
+
+test('dataBrasilia converte o horário do banco (UTC) para o dia em Brasília', () => {
+  assert.equal(dataBrasilia('2026-10-20T01:30:00Z'), '2026-10-19');
+  assert.equal(dataBrasilia('2026-10-20T03:30:00+00:00'), '2026-10-20');
 });

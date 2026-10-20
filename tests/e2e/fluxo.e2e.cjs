@@ -77,18 +77,26 @@ async function entrar(page, quem) {
   ok('sessão expirada: entrou de novo e o rascunho estava lá');
 
   // 5) Aprovar com a resposta perdida no caminho: o banco aprova, a tela confere e não deixa aprovar 2x
-  await pedro.getByRole('button', { name: 'Salvar e aprovar' }).click();
+  // salva com um rolo, troca para outro na tela e toca Aprovar: tem de aprovar a versão da tela
+  await pedro.getByRole('button', { name: 'Salvar', exact: true }).click();
+  await pedro.getByText('Salvo ✓').waitFor();
+  const outro = sql(`insert into filamentos (marca, tipo, cor_nome, cor_hex, custo_kg, gramas_iniciais) values ('Teste','PLA','${tag} B','#FFFFFF',100,300) returning id`).split('\n')[0];
+  await pedro.reload();
+  await pedro.locator('main select[aria-label^="Rolo para a cor"]').first().selectOption(outro);
+  await pedro.getByRole('button', { name: 'Aprovar', exact: true }).click();
   await pedro.locator('dialog[open]').getByText('Aprovar orçamento?').waitFor();
   await pedro.route('**/rest/v1/rpc/aprovar_orcamento', async (route) => { await route.fetch(); await route.abort('connectionreset'); });
   await pedro.locator('dialog[open]').getByRole('button', { name: 'Aprovar' }).click();
   await pedro.getByText('Aprovado', { exact: true }).first().waitFor();
   await pedro.unroute('**/rest/v1/rpc/aprovar_orcamento');
   if (await pedro.getByRole('button', { name: /Aprovar/ }).count()) falha('tela ainda oferece aprovar');
-  const saldo = sql(`select gramas_restantes from filamentos where id = '${roloId}'`);
-  if (saldo !== '425.07') falha(`saldo depois da aprovação: ${saldo} (esperado 425,07)`);
+  const s1 = sql(`select gramas_restantes from filamentos where id = '${roloId}'`);
+  const s2 = sql(`select gramas_restantes from filamentos where id = '${outro}'`);
+  if (s1 !== '500.00' || s2 !== '225.07') falha(`baixa no rolo errado: antigo ${s1}, novo ${s2} (esperado 500,00 e 225,07)`);
   const tarefas = sql(`select count(*) from tarefas t join orcamento_itens i on i.id = t.orcamento_item_id join orcamentos o on o.id = i.orcamento_id where o.cliente = 'Cliente ${tag}'`);
   if (tarefas !== '1') falha(`tarefas: ${tarefas}`);
-  ok('resposta perdida: aprovado uma vez só, 74,93 g saíram do rolo certo');
+  ok('trocar o rolo depois de salvar e aprovar: baixou do rolo da tela');
+  ok('resposta perdida: aprovado uma vez só');
 
   // 6) Venda avulsa em menos de 30 s
   const t0 = Date.now();

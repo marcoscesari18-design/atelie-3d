@@ -90,3 +90,14 @@ for (const n of ['sem_fatiar_ideal.3mf', 'sem_fatiar_wellpet.3mf']) {
     await assert.rejects(real(n), erroCom('sem_fatiar'));
   });
 }
+
+test('cor com 0 g (slot carregado mas sem uso) é ignorada', async () => {
+  const r = await ler({ placas: [{ indice: 1, segundos: 600, gramas: 20, filamentos: [
+    { slot: 1, tipo: 'PLA', cor: '#FF6910', gramas: 20 }, { slot: 2, tipo: 'PLA', cor: '#0085D5', gramas: 0 }] }] });
+  assert.deepEqual(r.placas[0].filamentos.map((f) => f.slot), [1]);
+});
+
+test('gramas inválidas numa cor tornam o arquivo inválido', async () => {
+  await assert.rejects(ler({ placas: [{ indice: 1, segundos: 600, gramas: 20, filamentos: [
+    { slot: 1, tipo: 'PLA', cor: '#FF6910', gramas: 'abc' }] }] }), erroCom('nao_bate'));
+});

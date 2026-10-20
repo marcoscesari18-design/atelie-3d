@@ -31,4 +31,7 @@ export function hojeISO(base = new Date(), somarDias = 0) {
   const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + somarDias);
   return iso(d);
 }
+// Dia (AAAA-MM-DD) em Brasília de um horário do banco (que vem em UTC).
+const fmtBrasilia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
+export const dataBrasilia = (horario) => fmtBrasilia.format(new Date(horario));
 export const inicioDoMesISO = (base = new Date()) => iso(new Date(base.getFullYear(), base.getMonth(), 1));

@@ -87,6 +87,11 @@ async function renderizar() {
 }
 
 async function iniciar() {
+  if (!db.configurado) {
+    limpar(raiz).append(h('div', { class: 'login' }, h('h1', {}, 'Ateliê 3D'),
+      h('p', {}, 'O app ainda está sendo ligado ao banco de dados. Volte daqui a pouco.')));
+    return;
+  }
   const u = await db.usuario();
   if (!u) return telaLogin();
   limpar(raiz).append(carregando(2));

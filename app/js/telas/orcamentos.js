@@ -1,7 +1,7 @@
 // 🧾 Orçamentos — sobe o .3mf, confere rolos, define preço, gera PDF e aprova.
 // Aprovar = vira venda + tarefas na Semana e as gramas saem do estoque (no banco, numa transação).
 import { h, limpar, vazio, erroTela, avisar, dialogo, campo, confirmar, botao, corBolinha } from '../ui.js';
-import { brl, gramas, duracao, numeroOrc, hojeISO } from '../formato.js';
+import { brl, gramas, duracao, numeroOrc, hojeISO, dataBrasilia } from '../formato.js';
 import { ler3mf, Erro3mf } from '../le3mf.js';
 import { impressaoDe3mf, calcularRascunho, problemas, resumoBaixa, linhasParaBanco, rascunhoDoBanco } from '../orcamento.js';
 import { gerarPdfOrcamento } from '../pdf.js';
@@ -68,7 +68,7 @@ async function carregarApoio(ctx) {
   const [rolos, cfg, produtos] = await Promise.all([
     ctx.db.listar('filamentos', (q) => q.select('id, marca, tipo, cor_nome, cor_hex, custo_kg, gramas_restantes, ativo').order('tipo').order('cor_nome')),
     ctx.db.listar('config', (q) => q.select('chave, valor').in('chave', ['defaults_calculadora', 'marca'])),
-    ctx.db.listar('produtos', (q) => q.select('id, nome, linha, receita, foto_path, preco_venda').not('receita', 'is', null).order('nome')),
+    ctx.db.listar('produtos', (q) => { const c = q.select('id, nome, linha, receita, foto_path, preco_venda').not('receita', 'is', null).order('nome'); return ctx.perfil.papel === 'marcos' ? c : c.eq('linha', 'pedro'); }),
   ]);
   const erro = rolos.erro || cfg.erro || produtos.erro;
   if (erro) return { erro };
@@ -85,6 +85,7 @@ async function editor(tela, ctx, id) {
     const o = await ctx.db.listar('orcamentos', (q) => q.select(SELECT_ORC).eq('id', id).maybeSingle());
     if (o.erro) { tela.append(erroTela(o.erro, ctx.atualizar)); return; }
     if (!o.dados) { tela.append(vazio('Orçamento não encontrado.', h('a', { class: 'btn', href: '#orcamentos' }, 'Voltar'))); return; }
+    if (o.dados.linha === 'b2b' && ctx.perfil.papel !== 'marcos') { tela.append(vazio('Esse orçamento é do Marcos.', h('a', { class: 'btn', href: '#orcamentos' }, 'Voltar'))); return; }
     r = rascunhoDoBanco(o.dados, apoio.rolos);
     const local = lerLocal(id);
     if (!EDITAVEL.includes(r.status)) apagarLocal(id);
@@ -154,7 +155,7 @@ function desenhar(est) {
   const acoes = h('div', { class: 'acoes-fixas' },
     botao('Salvar', () => salvar(est), 'btn'),
     botao('PDF', () => pdf(est), 'btn'),
-    r.id && !r.alterado ? botao('Aprovar', () => aprovar(est), 'btn btn-primario') : botao('Salvar e aprovar', async () => { if (await salvar(est)) await aprovar(est); }, 'btn btn-primario'));
+    botao('Aprovar', () => aprovar(est), 'btn btn-primario'));
   tela.append(acoes, h('div', { class: 'acoes' },
     r.id ? botao('Cliente recusou', () => recusar(est), 'btn btn-perigo') : null,
     r.alterado || !r.id ? botao(r.id ? 'Descartar alterações' : 'Descartar', async () => {
@@ -342,42 +343,22 @@ async function salvar(est) {
   const p = problemas(r, apoio.rolos, apoio.params);
   if (p.length) { avisar(p[0], 'erro'); return false; }
   const calc = calcularRascunho(r, apoio.rolos, apoio.params);
+  let fotoFalhou = false;
   for (const item of r.itens) {
     if (!item.fotoPath && item.fotoDataUrl) {
       const up = await ctx.db.enviarFoto(await (await fetch(item.fotoDataUrl)).blob());
-      if (!up.erro) item.fotoPath = up.dados;
+      if (up.erro) fotoFalhou = true; else item.fotoPath = up.dados;
     }
   }
   const l = linhasParaBanco(r, calc);
-  let id = r.id;
-  if (id) {
-    const u = await ctx.db.atualizar('orcamentos', id, l.orcamento, 'id, status');
-    if (u.erro || !u.dados) { avisar(u.erro || 'Esse orçamento não pode mais ser alterado.', 'erro'); return false; }
-    const d = await ctx.db.listar('orcamento_itens', (q) => q.delete().eq('orcamento_id', id));
-    if (d.erro) { avisar(d.erro, 'erro'); return false; }
-  } else {
-    const n = await ctx.db.inserir('orcamentos', l.orcamento, 'id, numero, status');
-    if (n.erro) { avisar(n.erro, 'erro'); return false; }
-    id = n.dados.id; apagarLocal(null);
-    Object.assign(r, { id, numero: n.dados.numero, status: n.dados.status });
-  }
-  for (const [k, it] of l.itens.entries()) {
-    const ni = await ctx.db.inserir('orcamento_itens', { orcamento_id: id, produto_id: r.itens[k].produtoId || null, descricao: it.descricao, qtd: it.qtd,
-      extras: it.extras, custo_total: it.custo_total, preco_total: it.preco_total, foto_path: it.foto_path }, 'id');
-    if (ni.erro) { avisar(ni.erro, 'erro'); gravarLocal(r); return false; }
-    for (const imp of it.impressoes) {
-      const nm = await ctx.db.inserir('orcamento_impressoes', { item_id: ni.dados.id, arquivo_nome: imp.arquivo_nome, vezes: imp.vezes, unidades_por_vez: imp.unidades_por_vez }, 'id');
-      if (nm.erro) { avisar(nm.erro, 'erro'); gravarLocal(r); return false; }
-      for (const pl of imp.placas) {
-        const np = await ctx.db.inserir('orcamento_item_placas', { impressao_id: nm.dados.id, placa: pl.placa, segundos: pl.segundos, gramas: pl.gramas }, 'id');
-        if (np.erro) { avisar(np.erro, 'erro'); gravarLocal(r); return false; }
-        const fs = await ctx.db.listar('orcamento_placa_filamentos', (q) => q.insert(pl.filamentos.map((f) => ({ placa_id: np.dados.id, ...f }))));
-        if (fs.erro) { avisar(fs.erro, 'erro'); gravarLocal(r); return false; }
-      }
-    }
-  }
+  gravarLocal(r);
+  const x = await ctx.db.rpc('salvar_orcamento', { p_id: r.id || null, p_dados: { orcamento: l.orcamento, itens: l.itens } });
+  if (x.erro) { avisar(x.erro, 'erro'); return false; }
+  const id = x.dados[0].id;
+  if (!r.id) { apagarLocal(null); Object.assign(r, { id, numero: x.dados[0].numero, status: 'rascunho' }); }
   r.alterado = false; apagarLocal(id);
-  avisar('Salvo ✓');
+  avisar(fotoFalhou ? 'Salvo, mas a foto não subiu (conexão). Ela tenta de novo no próximo salvar.' : 'Salvo ✓', fotoFalhou ? 'erro' : 'ok');
+  if (fotoFalhou) { r.alterado = true; gravarLocal(r); }
   if (location.hash !== `#orcamentos/${id}`) history.replaceState(null, '', `#orcamentos/${id}`);
   desenhar(est);
   return true;
@@ -400,7 +381,7 @@ async function pdf(est) {
   const hoje = hojeISO();
   const validade = r.validade || hojeISO(new Date(), 7);
   const doc = gerarPdfOrcamento(window.jspdf.jsPDF, {
-    numero: r.numero, cliente: r.cliente, contato: r.contato, data: (r.createdAt || hoje).slice(0, 10), validade,
+    numero: r.numero, cliente: r.cliente, contato: r.contato, data: r.createdAt ? dataBrasilia(r.createdAt) : hoje, validade,
     itens: await Promise.all(r.itens.map(async (it, i) => ({ descricao: it.descricao, qtd: it.qtd, precoUnit: calc.itens[i].precoUnit, foto: await fotoParaPdf(ctx, it) }))),
     subtotal: calc.subtotal, descontoPct: calc.desconto, total: r.totalAceito ?? calc.total,
     marca: { nome: apoio.marca.nome, fone: apoio.marca.fone, instagram: apoio.marca.instagram, logo },
@@ -421,6 +402,8 @@ async function pdf(est) {
 
 async function aprovar(est) {
   const { r, ctx } = est;
+  // nunca aprovar uma versão diferente da que está na tela
+  if (r.alterado || !r.id) { if (!(await salvar(est))) return; }
   // dados frescos: saldo dos rolos pode ter mudado em outro aparelho
   const apoio = await carregarApoio(ctx);
   if (apoio.erro) return avisar(apoio.erro, 'erro');

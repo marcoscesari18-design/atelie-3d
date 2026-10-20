@@ -45,12 +45,14 @@ export async function ler3mf(arrayBuffer, { JSZip, DOMParser }) {
     const gramas = Number(meta(el, 'weight'));
     if (!(segundos > 0) || !(gramas > 0)) throw new Erro3mf('sem_fatiar');
     const indice = Number(meta(el, 'index'));
-    const filamentos = Array.from(el.getElementsByTagName('filament')).map((f) => ({
+    const todos = Array.from(el.getElementsByTagName('filament')).map((f) => ({
       slot: Number(f.getAttribute('id')),
       tipo: f.getAttribute('type'),
       cor: (f.getAttribute('color') || '').toUpperCase(),
       gramas: Number(f.getAttribute('used_g')),
     }));
+    if (todos.some((f) => !Number.isFinite(f.gramas) || f.gramas < 0)) throw new Erro3mf('nao_bate');
+    const filamentos = todos.filter((f) => f.gramas > 0); // slot carregado no AMS mas não usado: 0 g
     const soma = filamentos.reduce((s, f) => s + f.gramas, 0);
     if (filamentos.length === 0 || Math.abs(soma - gramas) > TOLERANCIA_G) throw new Erro3mf('nao_bate');
 

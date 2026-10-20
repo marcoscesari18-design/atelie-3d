@@ -99,14 +99,23 @@ async function registrar(ctx) {
     h('label', { class: 'check' }, pago, ' Já pagou'), h('label', { class: 'check' }, entregue, ' Já entreguei')),
   botoes: [{ texto: 'Voltar', valor: false }, { texto: 'Registrar', valor: true, primario: true }] });
   if (!ok) return;
+  return gravarVenda(ctx, { cliente, produto, descricao, qtd, preco, canal, pago, entregue, produtos, marcos }, crypto.randomUUID());
+}
+
+// id gerado no aparelho: se a resposta se perder e o Pedro tocar de novo, não duplica.
+async function gravarVenda(ctx, campos, id) {
+  const { cliente, produto, descricao, qtd, preco, canal, pago, entregue, produtos, marcos } = campos;
   const p = produtos.find((x) => x.id === produto.value);
   if (!cliente.value.trim() || preco.value === '' || (!p && !descricao.value.trim())) return avisar('Preencha cliente, o que vendeu e o preço.', 'erro');
   const x = await ctx.db.inserir('vendas', {
-    cliente: cliente.value.trim(), canal: canal.value, linha: p?.linha || 'pedro', produto_id: p?.id || null,
+    id, cliente: cliente.value.trim(), canal: canal.value, linha: p?.linha || 'pedro', produto_id: p?.id || null,
     descricao: p ? p.nome : descricao.value.trim(), qtd: Math.max(1, Number(qtd.value) || 1), preco_unit: Number(preco.value),
     custo_unit: Number(p?.custo_calculado) || 0, pago: pago.checked, entregue: entregue.checked,
   }, 'id');
-  if (x.erro) return avisar(x.erro, 'erro');
+  if (x.erro) {
+    const ja = await ctx.db.listar('vendas', (q) => q.select('id').eq('id', id).maybeSingle());
+    if (!ja.dados) return avisar(x.erro, 'erro');
+  }
   avisar(p || marcos ? 'Venda registrada ✓' : 'Venda registrada ✓ (sem produto, o lucro conta custo zero)');
   ctx.atualizar();
 }

@@ -82,3 +82,20 @@ test('volta do banco reconstrói o rascunho', () => {
   assert.equal(de.itens[0].precoUnit, 13);
   assert.equal(calcularRascunho(de, rolos, params).total, 13);
 });
+
+test('reabrir orçamento com desconto mantém o total salvo (caso do Codex: R$ 8,23)', () => {
+  const r = rascunho();
+  r.itens = [
+    { ...r.itens[0], descricao: 'A', precoUnit: 5.07 },
+    { ...structuredClone(r.itens[0]), descricao: 'B', precoUnit: 5.22 },
+  ];
+  r.descontoPct = 20;
+  const c = calcularRascunho(r, rolos, params);
+  assert.equal(c.total, 8.23);
+  const l = linhasParaBanco(r, c);
+  assert.deepEqual(l.itens.map((i) => i.preco_unit), [5.07, 5.22]);
+  const orc = { id: 'o1', numero: 1, status: 'enviado', cliente: 'J', canal: 'escola', linha: 'pedro', desconto_pct: 20,
+    orcamento_itens: l.itens.map((it) => ({ ...it, orcamento_impressoes: [] })) };
+  const de = rascunhoDoBanco(orc, rolos);
+  assert.deepEqual(de.itens.map((i) => i.precoUnit), [5.07, 5.22]);
+});

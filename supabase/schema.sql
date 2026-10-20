@@ -114,8 +114,10 @@ create table if not exists public.orcamento_itens (
   extras        numeric(10,2) not null default 0 check (extras >= 0),
   foto_path     text,
   custo_total   numeric(10,2) not null check (custo_total >= 0),
+  preco_unit    numeric(10,2) check (preco_unit >= 0),               -- preço por unidade ANTES do desconto
   preco_total   numeric(10,2) not null check (preco_total >= 0)   -- já com a parte do desconto
 );
+alter table public.orcamento_itens add column if not exists preco_unit numeric(10,2) check (preco_unit >= 0);
 create index if not exists orcamento_itens_orcamento_idx on public.orcamento_itens(orcamento_id);
 
 -- como o item vai ser impresso (P1: refatia o que falta — sem sobra)
@@ -166,12 +168,14 @@ create table if not exists public.tarefas (
   aprendizado        text,
   responsavel        text not null default 'pedro',
   reimpressao_de     uuid unique references public.tarefas(id) on delete set null,
+  iniciada           boolean not null default false,          -- já saiu da fila alguma vez: filamento gasto
   concluida_em       timestamptz,
   created_at         timestamptz not null default now(),
   constraint falha_tem_licao check (
     status <> 'falhou' or (coalesce(btrim(motivo_falha),'') <> '' and coalesce(btrim(aprendizado),'') <> '')
   )
 );
+alter table public.tarefas add column if not exists iniciada boolean not null default false;
 create index if not exists tarefas_orcamento_item_idx on public.tarefas(orcamento_item_id);
 create index if not exists tarefas_semana_idx on public.tarefas(semana, ordem);
 
@@ -219,7 +223,7 @@ create table if not exists public.vendas (
   descricao          text,
   qtd                smallint not null default 1 check (qtd > 0),
   preco_unit         numeric(10,2) not null check (preco_unit >= 0),
-  custo_unit         numeric(10,2) not null default 0 check (custo_unit >= 0),
+  custo_unit         numeric(12,4) not null default 0 check (custo_unit >= 0),
   desconto           numeric(10,2) not null default 0,
   pago               boolean not null default false,
   entregue           boolean not null default false,
@@ -231,6 +235,14 @@ create table if not exists public.vendas (
 );
 -- projetos criados antes desta coluna / do horário de Brasília
 alter table public.vendas alter column data set default private.hoje();
+do $$ begin
+  if (select numeric_scale from information_schema.columns where table_schema = 'public' and table_name = 'vendas' and column_name = 'custo_unit') < 4 then
+    drop view if exists public.v_resumo_mes;
+    alter table public.vendas drop column lucro;
+    alter table public.vendas alter column custo_unit type numeric(12,4);
+    alter table public.vendas add column lucro numeric(10,2) generated always as ((preco_unit * qtd) - desconto - (custo_unit * qtd)) stored;
+  end if;
+end $$;
 alter table public.orcamentos alter column validade set default (private.hoje() + 7);
 alter table public.vendas add column if not exists linha text not null default 'pedro' check (linha in ('pedro','b2b'));
 create index if not exists vendas_orcamento_idx on public.vendas(orcamento_id);
@@ -307,6 +319,7 @@ begin
       raise exception 'essa peça já foi reimpressa; não dá para mudar o status' using errcode = 'P0001';
     end if;
     new.concluida_em := case when new.status in ('ok','falhou') then now() else null end;
+    if new.status <> 'fila' then new.iniciada := true; end if;
   end if;
   return new;
 end $$;
@@ -362,7 +375,7 @@ begin
   end if;
 
   select sum(preco_total) into v_total from public.orcamento_itens where orcamento_id = p_id;
-  if round(p_total_esperado, 2) <> v_total then
+  if p_total_esperado is null or round(p_total_esperado, 2) is distinct from v_total then
     raise exception 'o orçamento mudou, confira de novo (total agora: %)', v_total using errcode = 'P0001';
   end if;
 
@@ -384,6 +397,13 @@ begin
        where i.item_id = it.id
          and not exists (select 1 from public.orcamento_placa_filamentos f where f.placa_id = p.id)) then
       raise exception '"%": escolha o rolo de cada cor', it.descricao using errcode = 'P0001';
+    end if;
+    if exists (
+      select 1 from public.orcamento_impressoes i
+        join public.orcamento_item_placas p on p.impressao_id = i.id
+       where i.item_id = it.id
+         and abs(p.gramas - (select coalesce(sum(f.gramas), 0) from public.orcamento_placa_filamentos f where f.placa_id = p.id)) > 0.5) then
+      raise exception '"%": as gramas das cores não batem com o peso da placa; suba o .3mf de novo', it.descricao using errcode = 'P0001';
     end if;
   end loop;
 
@@ -416,7 +436,7 @@ begin
     insert into public.vendas (cliente, canal, linha, produto_id, orcamento_id, orcamento_item_id, descricao,
                                qtd, preco_unit, custo_unit, desconto)
     values (o.cliente, o.canal, o.linha, it.produto_id, p_id, it.id, it.descricao,
-            it.qtd, v_preco_unit, round(it.custo_total / it.qtd, 2), v_preco_unit * it.qtd - it.preco_total)
+            it.qtd, v_preco_unit, round(it.custo_total / it.qtd, 4), v_preco_unit * it.qtd - it.preco_total)
     returning id into v_venda;
     v_vendas := v_vendas || v_venda;
   end loop;
@@ -471,6 +491,7 @@ returns void language plpgsql security definer set search_path = '' as $$
 declare v_status text;
 begin
   perform private.exigir_membro();
+  if not private.eh_marcos() then raise exception 'só o Marcos cancela orçamento aprovado' using errcode = '42501'; end if;
   select status into v_status from public.orcamentos where id = p_id for update;
   if v_status is null then raise exception 'orçamento não encontrado' using errcode = 'P0002'; end if;
   if v_status <> 'aprovado' then
@@ -483,7 +504,7 @@ begin
     from public.movimentos_estoque m
     join public.tarefas t on t.id = m.tarefa_id
     join public.orcamento_itens i on i.id = t.orcamento_item_id
-   where i.orcamento_id = p_id and t.status = 'fila' and m.gramas < 0
+   where i.orcamento_id = p_id and t.status = 'fila' and not t.iniciada and m.gramas < 0
      and not exists (select 1 from public.movimentos_estoque e where e.estorno_de = m.id);
 
   delete from public.tarefas t
@@ -513,12 +534,68 @@ returns uuid language plpgsql security definer set search_path = '' as $$
 declare v_id uuid;
 begin
   perform private.exigir_membro();
+  if not private.eh_marcos() then raise exception 'só o Marcos lança rolo novo' using errcode = '42501'; end if;
   if p_gramas is null or p_gramas <= 0 then raise exception 'gramas do rolo novo precisam ser maiores que zero' using errcode = 'P0001'; end if;
   perform 1 from public.filamentos where id = p_filamento for update;
   if not found then raise exception 'rolo não encontrado' using errcode = 'P0002'; end if;
   insert into public.movimentos_estoque (filamento_id, gramas, motivo, obs)
   values (p_filamento, p_gramas, 'rolo_novo', 'rolo novo') returning id into v_id;
   return v_id;
+end $$;
+
+-- grava o orçamento inteiro (cabeçalho + itens + impressões + placas + cores) numa transação só
+create or replace function public.salvar_orcamento(p_id uuid, p_dados jsonb)
+returns table (id uuid, numero integer) language plpgsql security definer set search_path = '' as $$
+declare
+  o      jsonb := p_dados -> 'orcamento';
+  v_id   uuid := p_id;
+  v_num  integer;
+  v_st   text;
+  v_lin  text;
+  it jsonb; imp jsonb; pl jsonb; f jsonb;
+  v_item uuid; v_imp uuid; v_placa uuid;
+begin
+  perform private.exigir_membro();
+  if (o ->> 'linha') = 'b2b' and not private.eh_marcos() then
+    raise exception 'só o Marcos faz orçamento B2B' using errcode = '42501';
+  end if;
+  if v_id is null then
+    insert into public.orcamentos (cliente, contato, canal, linha, desconto_pct, obs)
+    values (o ->> 'cliente', nullif(o ->> 'contato', ''), coalesce(o ->> 'canal', 'escola'), coalesce(o ->> 'linha', 'pedro'),
+            coalesce((o ->> 'desconto_pct')::numeric, 0), nullif(o ->> 'obs', ''))
+    returning orcamentos.id, orcamentos.numero into v_id, v_num;
+  else
+    select status, linha, orcamentos.numero into v_st, v_lin, v_num from public.orcamentos where orcamentos.id = v_id for update;
+    if v_st is null then raise exception 'orçamento não encontrado' using errcode = 'P0002'; end if;
+    if v_st not in ('rascunho','enviado') then raise exception 'esse orçamento já foi %; não dá mais para mudar', v_st using errcode = 'P0001'; end if;
+    if v_lin = 'b2b' and not private.eh_marcos() then raise exception 'só o Marcos mexe em orçamento B2B' using errcode = '42501'; end if;
+    update public.orcamentos set cliente = o ->> 'cliente', contato = nullif(o ->> 'contato', ''), canal = coalesce(o ->> 'canal', canal),
+           linha = coalesce(o ->> 'linha', linha), desconto_pct = coalesce((o ->> 'desconto_pct')::numeric, 0), obs = nullif(o ->> 'obs', '')
+     where orcamentos.id = v_id;
+    delete from public.orcamento_itens where orcamento_id = v_id;
+  end if;
+
+  for it in select * from jsonb_array_elements(coalesce(p_dados -> 'itens', '[]'::jsonb)) loop
+    insert into public.orcamento_itens (orcamento_id, produto_id, descricao, qtd, extras, foto_path, custo_total, preco_unit, preco_total)
+    values (v_id, nullif(it ->> 'produto_id', '')::uuid, it ->> 'descricao', (it ->> 'qtd')::smallint, coalesce((it ->> 'extras')::numeric, 0),
+            nullif(it ->> 'foto_path', ''), (it ->> 'custo_total')::numeric, (it ->> 'preco_unit')::numeric, (it ->> 'preco_total')::numeric)
+    returning orcamento_itens.id into v_item;
+    for imp in select * from jsonb_array_elements(coalesce(it -> 'impressoes', '[]'::jsonb)) loop
+      insert into public.orcamento_impressoes (item_id, arquivo_nome, vezes, unidades_por_vez)
+      values (v_item, imp ->> 'arquivo_nome', (imp ->> 'vezes')::smallint, (imp ->> 'unidades_por_vez')::smallint)
+      returning orcamento_impressoes.id into v_imp;
+      for pl in select * from jsonb_array_elements(coalesce(imp -> 'placas', '[]'::jsonb)) loop
+        insert into public.orcamento_item_placas (impressao_id, placa, segundos, gramas)
+        values (v_imp, (pl ->> 'placa')::smallint, (pl ->> 'segundos')::integer, (pl ->> 'gramas')::numeric)
+        returning orcamento_item_placas.id into v_placa;
+        for f in select * from jsonb_array_elements(coalesce(pl -> 'filamentos', '[]'::jsonb)) loop
+          insert into public.orcamento_placa_filamentos (placa_id, filamento_id, gramas)
+          values (v_placa, (f ->> 'filamento_id')::uuid, (f ->> 'gramas')::numeric);
+        end loop;
+      end loop;
+    end loop;
+  end loop;
+  return query select v_id, v_num;
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -537,7 +614,8 @@ where not cancelada
 group by 1
 order by 1 desc;
 
-create or replace view public.v_semana_pedro with (security_invoker = true) as
+drop view if exists public.v_semana_pedro;
+create view public.v_semana_pedro with (security_invoker = true) as
 select t.*,
        coalesce(p.nome, i.descricao) as produto,
        (select string_agg(f.cor_nome, ' + ' order by f.cor_nome)
@@ -564,20 +642,18 @@ grant insert (marca, tipo, cor_nome, cor_hex, custo_kg, gramas_iniciais, slot_am
 grant update (marca, tipo, cor_nome, cor_hex, custo_kg, slot_ams, ativo, obs) on public.filamentos to authenticated;
 grant select, insert, update, delete on public.produtos to authenticated;
 grant select on public.orcamentos to authenticated;
-grant insert (cliente, contato, canal, linha, validade, desconto_pct, obs) on public.orcamentos to authenticated;
-grant update (cliente, contato, canal, linha, validade, desconto_pct, obs) on public.orcamentos to authenticated;
 grant delete on public.orcamentos to authenticated;
-grant select, insert, update, delete on public.orcamento_itens, public.orcamento_impressoes,
+grant select on public.orcamento_itens, public.orcamento_impressoes,
   public.orcamento_item_placas, public.orcamento_placa_filamentos to authenticated;
 grant select on public.tarefas, public.tarefa_filamentos, public.movimentos_estoque to authenticated;
 grant update (status, motivo_falha, aprendizado, gramas_real, ordem, semana) on public.tarefas to authenticated;
 grant select, delete on public.vendas to authenticated;
-grant insert (data, cliente, canal, linha, produto_id, descricao, qtd, preco_unit, custo_unit, desconto, pago, entregue, obs) on public.vendas to authenticated;
+grant insert (id, data, cliente, canal, linha, produto_id, descricao, qtd, preco_unit, custo_unit, desconto, pago, entregue, obs) on public.vendas to authenticated;
 grant update (data, pago, entregue, obs) on public.vendas to authenticated;
 grant select, insert, update on public.config to authenticated;
 grant select on public.v_resumo_mes, public.v_semana_pedro to authenticated;
 
-grant execute on function public.marcar_orcamento(uuid, text), public.aprovar_orcamento(uuid, numeric),
+grant execute on function public.salvar_orcamento(uuid, jsonb), public.marcar_orcamento(uuid, text), public.aprovar_orcamento(uuid, numeric),
   public.reimprimir_tarefa(uuid), public.cancelar_orcamento(uuid),
   public.ajustar_estoque(uuid, numeric, text), public.entrada_rolo(uuid, numeric) to authenticated;
 
@@ -602,11 +678,20 @@ alter table public.config                     enable row level security;
 do $$
 declare t text;
 begin
-  foreach t in array array['perfis','filamentos','produtos','tarefas','tarefa_filamentos','movimentos_estoque'] loop
+  foreach t in array array['perfis','produtos','tarefas','tarefa_filamentos','movimentos_estoque'] loop
     execute format('drop policy if exists membros on public.%I', t);
     execute format('create policy membros on public.%I for all to authenticated using ((select private.eh_membro())) with check ((select private.eh_membro()))', t);
   end loop;
 end $$;
+
+-- filamentos: todos leem, só o Marcos cadastra e edita
+drop policy if exists membros on public.filamentos;
+drop policy if exists ler on public.filamentos;
+create policy ler on public.filamentos for select to authenticated using ((select private.eh_membro()));
+drop policy if exists gravar on public.filamentos;
+create policy gravar on public.filamentos for insert to authenticated with check ((select private.eh_marcos()));
+drop policy if exists alterar on public.filamentos;
+create policy alterar on public.filamentos for update to authenticated using ((select private.eh_marcos())) with check ((select private.eh_marcos()));
 
 -- config: todos leem, só o Marcos grava
 drop policy if exists ler on public.config;
@@ -692,5 +777,3 @@ drop policy if exists "fotos: membros enviam" on storage.objects;
 create policy "fotos: membros enviam" on storage.objects for insert to authenticated
   with check (bucket_id = 'fotos' and (select private.eh_membro()));
 drop policy if exists "fotos: membros apagam" on storage.objects;
-create policy "fotos: membros apagam" on storage.objects for delete to authenticated
-  using (bucket_id = 'fotos' and (select private.eh_membro()));

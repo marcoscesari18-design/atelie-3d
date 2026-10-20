@@ -29,7 +29,7 @@ begin
   end if;
 end $$;
 
-create function testes.rolo(p_cor text, p_gramas numeric default 1000, p_tipo text default 'PLA') returns uuid language sql as $$
+create function testes.rolo(p_cor text, p_gramas numeric default 1000, p_tipo text default 'PLA') returns uuid language sql security definer as $$
   insert into public.filamentos (marca, tipo, cor_nome, cor_hex, custo_kg, gramas_iniciais)
   values ('Teste', p_tipo, p_cor, '#FF6910', 120, p_gramas) returning id;
 $$;
@@ -38,17 +38,17 @@ create function testes.saldo(p_rolo uuid) returns numeric language sql as $$
   select gramas_restantes from public.filamentos where id = p_rolo;
 $$;
 
-create function testes.orcamento(p_cliente text default 'Cliente teste') returns uuid language sql as $$
+create function testes.orcamento(p_cliente text default 'Cliente teste') returns uuid language sql security definer as $$
   insert into public.orcamentos (cliente, canal) values (p_cliente, 'escola') returning id;
 $$;
 
-create function testes.item(p_orc uuid, p_qtd int, p_preco_total numeric, p_custo_total numeric default 5) returns uuid language sql as $$
+create function testes.item(p_orc uuid, p_qtd int, p_preco_total numeric, p_custo_total numeric default 5) returns uuid language sql security definer as $$
   insert into public.orcamento_itens (orcamento_id, descricao, qtd, custo_total, preco_total)
   values (p_orc, 'Peça teste', p_qtd, p_custo_total, p_preco_total) returning id;
 $$;
 
 -- impressão com 1 placa; p_rolos/p_gramas = gramas por rolo nessa placa
-create function testes.impressao(p_item uuid, p_vezes int, p_upv int, p_rolos uuid[], p_gramas numeric[]) returns uuid language plpgsql as $$
+create function testes.impressao(p_item uuid, p_vezes int, p_upv int, p_rolos uuid[], p_gramas numeric[]) returns uuid language plpgsql security definer as $$
 declare v_imp uuid; v_placa uuid; i int; v_total numeric := 0;
 begin
   insert into public.orcamento_impressoes (item_id, vezes, unidades_por_vez) values (p_item, p_vezes, p_upv) returning id into v_imp;
@@ -59,6 +59,14 @@ begin
   end loop;
   return v_imp;
 end $$;
+
+create function testes.forcar_gramas_placa(p_imp uuid, p_gramas numeric) returns void language sql security definer as $$
+  update public.orcamento_item_placas set gramas = p_gramas where impressao_id = p_imp;
+$$;
+
+create function testes.linha(p_orc uuid, p_linha text) returns void language sql security definer as $$
+  update public.orcamentos set linha = p_linha where id = p_orc;
+$$;
 
 grant execute on all functions in schema testes to authenticated, anon;
 
@@ -204,7 +212,7 @@ end $$;
 rollback;
 
 \echo '9. cancelar devolve só o que estava na fila'
-begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+begin; select testes.como('00000000-0000-0000-0000-00000000000a'); set local role authenticated;
 do $$
 declare a uuid := testes.rolo('Laranja'); o uuid; it uuid; t1 uuid;
 begin
@@ -319,17 +327,21 @@ begin
   o := testes.orcamento(); it := testes.item(o, 1, 13);
   perform testes.impressao(it, 1, 1, array[a], array[10]);
   perform public.aprovar_orcamento(o, 13);
-  update public.orcamento_itens set preco_total = 1 where id = it;
-  get diagnostics n = row_count;
-  perform testes.igual(n, 0, 'editou item aprovado');
   begin
-    perform testes.item(o, 1, 99);
+    update public.orcamento_itens set preco_total = 1 where id = it;
+    raise exception 'FALHOU: editou item aprovado';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.orcamento_itens (orcamento_id, descricao, qtd, custo_total, preco_total) values (o, 'x', 1, 1, 99);
     raise exception 'FALHOU: incluiu item em orçamento aprovado';
   exception when insufficient_privilege then null;
   end;
-  update public.orcamentos set cliente = 'outro' where id = o;
-  get diagnostics n = row_count;
-  perform testes.igual(n, 0, 'editou orçamento aprovado');
+  begin
+    update public.orcamentos set cliente = 'outro' where id = o;
+    raise exception 'FALHOU: editou orçamento direto';
+  exception when insufficient_privilege then null;
+  end;
   begin
     update public.orcamentos set status = 'rascunho' where id = o;
     raise exception 'FALHOU: mudou status direto';
@@ -408,7 +420,7 @@ begin; select testes.como('00000000-0000-0000-0000-00000000000a'); set local rol
 do $$
 declare a uuid := testes.rolo('Laranja'); o uuid; it uuid; v uuid[];
 begin
-  o := testes.orcamento(); update public.orcamentos set linha = 'b2b' where id = o;
+  o := testes.orcamento(); perform testes.linha(o, 'b2b');
   it := testes.item(o, 1, 13);
   perform testes.impressao(it, 1, 1, array[a], array[10]);
   v := public.aprovar_orcamento(o, 13);
@@ -431,6 +443,121 @@ begin
   perform testes.impressao(it, 1, 1, array[a], array[10]);
   perform public.aprovar_orcamento(o, 13);
   perform testes.igual((select semana from public.tarefas where orcamento_item_id = it), date_trunc('week', hoje)::date, 'semana');
+end $$;
+rollback;
+
+\echo '22. Pedro não cancela orçamento, não soma nem cadastra rolo'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); o uuid; it uuid;
+begin
+  o := testes.orcamento(); it := testes.item(o, 1, 13);
+  perform testes.impressao(it, 1, 1, array[a], array[10]);
+  perform public.aprovar_orcamento(o, 13);
+  begin perform public.cancelar_orcamento(o); raise exception 'FALHOU: Pedro cancelou';
+  exception when insufficient_privilege then null; end;
+  begin perform public.entrada_rolo(a, 500); raise exception 'FALHOU: Pedro somou rolo';
+  exception when insufficient_privilege then null; end;
+  begin insert into public.filamentos (marca, tipo, cor_nome, custo_kg) values ('x','PLA','x',1); raise exception 'FALHOU: Pedro cadastrou rolo';
+  exception when insufficient_privilege then null; end;
+  perform testes.igual(testes.saldo(a), 990.00::numeric, 'saldo');
+end $$;
+rollback;
+
+\echo '23. cancelar não devolve o que já começou a imprimir (mesmo se voltou para a fila)'
+begin; select testes.como('00000000-0000-0000-0000-00000000000a'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); o uuid; it uuid; t uuid;
+begin
+  o := testes.orcamento(); it := testes.item(o, 1, 13);
+  perform testes.impressao(it, 1, 1, array[a], array[10]);
+  perform public.aprovar_orcamento(o, 13);
+  select id into t from public.tarefas where orcamento_item_id = it;
+  update public.tarefas set status = 'ok' where id = t;
+  update public.tarefas set status = 'fila' where id = t;
+  perform public.cancelar_orcamento(o);
+  perform testes.igual(testes.saldo(a), 990.00::numeric, 'não devolveu');
+end $$;
+rollback;
+
+\echo '24. aprovar recusa total vazio e gramas que não batem'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); o uuid; it uuid; imp uuid;
+begin
+  o := testes.orcamento(); it := testes.item(o, 1, 13);
+  imp := testes.impressao(it, 1, 1, array[a], array[10]);
+  begin perform public.aprovar_orcamento(o, null); raise exception 'FALHOU: aprovou com total nulo';
+  exception when others then if sqlerrm like 'FALHOU%' then raise; end if; end;
+  perform testes.forcar_gramas_placa(imp, 100);
+  begin perform public.aprovar_orcamento(o, 13); raise exception 'FALHOU: aprovou placa de 100 g com 10 g nas cores';
+  exception when others then if sqlerrm like 'FALHOU%' then raise; end if;
+    if sqlerrm not like '%não batem%' then raise exception 'FALHOU: mensagem errada: %', sqlerrm; end if; end;
+  perform testes.igual(testes.saldo(a), 1000.00::numeric, 'saldo intacto');
+end $$;
+rollback;
+
+\echo '25. salvar_orcamento grava tudo numa transação e regrava sem perder'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); r record; d jsonb;
+begin
+  d := jsonb_build_object('orcamento', jsonb_build_object('cliente','João','canal','escola','linha','pedro','desconto_pct',0),
+    'itens', jsonb_build_array(jsonb_build_object('descricao','Chaveiro','qtd',2,'extras',0,'custo_total',8,'preco_total',26,'preco_unit',13,
+      'impressoes', jsonb_build_array(jsonb_build_object('arquivo_nome','c.3mf','vezes',1,'unidades_por_vez',2,
+        'placas', jsonb_build_array(jsonb_build_object('placa',1,'segundos',3600,'gramas',12,
+          'filamentos', jsonb_build_array(jsonb_build_object('filamento_id',a,'gramas',12)))))))));
+  select * into r from public.salvar_orcamento(null, d);
+  perform testes.igual((select count(*) from public.orcamento_itens where orcamento_id = r.id), 1::bigint, 'item criado');
+  perform testes.igual((select preco_unit from public.orcamento_itens where orcamento_id = r.id), 13.00::numeric, 'preço bruto guardado');
+  d := jsonb_set(d, '{orcamento,cliente}', '"João Silva"');
+  perform public.salvar_orcamento(r.id, d);
+  perform testes.igual((select cliente from public.orcamentos where id = r.id), 'João Silva', 'regravou');
+  perform testes.igual((select count(*) from public.orcamento_itens where orcamento_id = r.id), 1::bigint, 'sem duplicar');
+  begin perform public.salvar_orcamento(r.id, jsonb_set(d, '{itens,0,qtd}', '0')); raise exception 'FALHOU: aceitou qtd 0';
+  exception when others then if sqlerrm like 'FALHOU%' then raise; end if; end;
+  perform testes.igual((select count(*) from public.orcamento_itens where orcamento_id = r.id), 1::bigint, 'erro não apagou o que havia');
+  begin perform public.salvar_orcamento(null, jsonb_set(d, '{orcamento,linha}', '"b2b"')); raise exception 'FALHOU: Pedro salvou B2B';
+  exception when insufficient_privilege then null; end;
+  perform public.aprovar_orcamento(r.id, 26);
+  begin perform public.salvar_orcamento(r.id, d); raise exception 'FALHOU: regravou aprovado';
+  exception when others then if sqlerrm like 'FALHOU%' then raise; end if; end;
+end $$;
+rollback;
+
+\echo '26. lucro da venda sem erro de centavos'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Laranja'); o uuid; it uuid; v uuid[];
+begin
+  o := testes.orcamento(); it := testes.item(o, 3, 15, 10);
+  perform testes.impressao(it, 1, 3, array[a], array[10]);
+  v := public.aprovar_orcamento(o, 15);
+  perform testes.igual((select lucro from public.vendas where id = v[1]), 5.00::numeric, 'lucro');
+end $$;
+rollback;
+
+\echo '27. venda avulsa com id do aparelho não duplica ao repetir'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare i uuid := gen_random_uuid();
+begin
+  insert into public.vendas (id, cliente, qtd, preco_unit) values (i, 'Repete', 1, 5);
+  begin insert into public.vendas (id, cliente, qtd, preco_unit) values (i, 'Repete', 1, 5); raise exception 'FALHOU: duplicou';
+  exception when unique_violation then null; end;
+  perform testes.igual((select count(*) from public.vendas where cliente = 'Repete'), 1::bigint, 'uma venda');
+end $$;
+rollback;
+
+\echo '28. ninguém apaga foto pela API'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+insert into storage.objects (bucket_id, name, owner_id) values ('fotos', 'teste/x.png', '00000000-0000-0000-0000-00000000000b');
+do $$
+declare n int;
+begin
+  delete from storage.objects where bucket_id = 'fotos' and name = 'teste/x.png';
+  get diagnostics n = row_count;
+  perform testes.igual(n, 0, 'apagou foto');
 end $$;
 rollback;
 
