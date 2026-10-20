@@ -5,6 +5,7 @@ import { AMBIENTE } from './config.js';
 
 // Ícones de traço (24×24), desenhados para o app: folha de orçamento, calendário, carretel, moedas, controles.
 const ICONES = {
+  painel: 'M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-3H4zM14 7h6V4h-6z',
   orcamentos: 'M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5',
   semana: 'M4 6h16v14H4zM4 10h16M8 3v5M16 3v5M8 14h2M12 14h2',
   filamentos: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
@@ -12,6 +13,7 @@ const ICONES = {
   ajustes: 'M5 6h14M5 12h14M5 18h14M9 4v4M15 10v4M8 16v4',
 };
 const ABAS = [
+  { id: 'painel',     rotulo: 'Painel' },
   { id: 'orcamentos', rotulo: 'Orçamentos' },
   { id: 'semana',     rotulo: 'Semana' },
   { id: 'filamentos', rotulo: 'Filamentos' },

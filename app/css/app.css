@@ -330,3 +330,42 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
 @media (min-width: 1200px) {
   .ajustes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
 }
+
+/* ---------- painel ---------- */
+.painel-grade { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 24px; margin-top: 8px; }
+@media (min-width: 1024px) { .painel-grade { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; } }
+.painel-grade > div > .secao:first-child { margin-top: 16px; }
+.atencao-lista .item { min-height: 56px; }
+.atencao-lista .carretel { --tam: 36px; }
+.kpis.producao { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kpis.producao .kpi .v { font-size: 22px; }
+.item.proxima { margin-top: 8px; }
+.item.mais { min-height: 48px; border-style: dashed; }
+.item.mais .titulo { font-weight: 500; color: var(--dim); }
+.barras { display: flex; flex-direction: column; gap: 10px; }
+.barra-linha { display: grid; grid-template-columns: minmax(70px, 110px) minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 14px; }
+.barra-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barra-linha .trilho { height: 14px; }
+.barra-linha .trilho span { display: block; height: 100%; border-radius: 0 4px 4px 0; background: #c9b39c; }
+.barra-linha .v { text-align: right; }
+.nota { font-size: 13px; margin: 2px 0 0; }
+.grafico .legenda { display: flex; gap: 16px; font-size: 13px; color: var(--dim); margin-bottom: 10px; }
+.grafico .legenda span { display: inline-flex; align-items: center; gap: 6px; }
+.grafico .legenda i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.colunas { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; height: 180px; align-items: end; border-bottom: 1px solid var(--linha); }
+.coluna { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; outline-offset: 2px; position: relative; }
+.coluna-valor { font-size: 11.5px; color: var(--dim); white-space: nowrap; min-height: 16px; font-variant-numeric: tabular-nums; }
+.pilha { display: flex; flex-direction: column; gap: 2px; width: min(100%, 34px); min-height: 2px; }
+.parte { display: block; min-height: 2px; flex-basis: 0; }
+.pilha .parte:first-child { border-radius: 4px 4px 0 0; }
+.coluna-dia { position: absolute; bottom: -22px; font-size: 11.5px; color: var(--fraco); }
+.grafico .colunas { margin-bottom: 28px; }
+.coluna:hover .pilha, .coluna:focus-visible .pilha { filter: brightness(1.15); }
+.tabela summary { cursor: pointer; color: var(--dim); font-size: 14px; min-height: 44px; display: flex; align-items: center; }
+.tabela { overflow-x: auto; }
+.tabela table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tabela th, .tabela td { padding: 6px 4px; border-bottom: 1px solid var(--linha-suave); text-align: right; }
+.tabela th:first-child, .tabela td:first-child { text-align: left; }
+.tabela th { color: var(--dim); font-weight: 600; }
+/* 6 abas no celular (Marcos): rótulo um pouco menor para caber em 320 px */
+@media (max-width: 400px) { .abas a { font-size: 11px; } }

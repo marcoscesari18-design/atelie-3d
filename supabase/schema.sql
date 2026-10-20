@@ -575,6 +575,11 @@ begin
 end $$;
 
 -- grava o orçamento inteiro (cabeçalho + itens + impressões + placas + cores) numa transação só
+-- Batida na porta do lembrete "manter o banco acordado" (GitHub Actions): responde 'ok' sem ler nenhum dado.
+-- É a única função liberada sem login; existe só para o plano grátis não pausar o banco por falta de uso.
+create or replace function public.ping()
+returns text language sql stable set search_path = '' as $$ select 'ok'::text $$;
+
 -- Cor do rolo conferida por foto: qualquer membro (Pedro também) troca SÓ a cor; preço e gramas seguem só com o Marcos.
 create or replace function public.corrigir_cor_rolo(p_filamento uuid, p_cor text)
 returns void language plpgsql security definer set search_path = '' as $$
@@ -702,6 +707,7 @@ grant execute on function public.salvar_orcamento(uuid, jsonb), public.marcar_or
   public.reimprimir_tarefa(uuid), public.cancelar_orcamento(uuid),
   public.ajustar_estoque(uuid, numeric, text), public.entrada_rolo(uuid, numeric),
   public.corrigir_cor_rolo(uuid, text) to authenticated;
+grant execute on function public.ping() to anon, authenticated;
 
 -- ---------------------------------------------------------------------
 -- 12. RLS — só quem está em `perfis`

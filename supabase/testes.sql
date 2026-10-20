@@ -681,6 +681,18 @@ begin
 end $$;
 rollback;
 
+\echo '36. ping do lembrete responde sem login e não abre nada além dele'
+begin; set local role anon;
+do $$
+begin
+  perform testes.igual(public.ping(), 'ok', 'ping');
+  begin perform count(*) from public.filamentos; raise exception 'FALHOU: anon leu filamentos';
+  exception when insufficient_privilege then null; end;
+  begin perform public.corrigir_cor_rolo(gen_random_uuid(), '#000000'); raise exception 'FALHOU: anon chamou corrigir_cor_rolo';
+  exception when insufficient_privilege then null; end;
+end $$;
+rollback;
+
 -- ---------- limpeza ----------
 delete from public.perfis where user_id in ('00000000-0000-0000-0000-00000000000a','00000000-0000-0000-0000-00000000000b');
 delete from auth.users where id in ('00000000-0000-0000-0000-00000000000a','00000000-0000-0000-0000-00000000000b','00000000-0000-0000-0000-00000000000c');

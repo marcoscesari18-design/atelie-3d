@@ -1,0 +1,33 @@
+# O plano grátis do Supabase pausa o banco quando ele tem pouco uso na semana — aí o app para de abrir.
+# Segundo o Supabase, "algumas consultas por dia" bastam. Este lembrete chama 3 vezes por dia a função
+# public.ping() (responde 'ok', não lê nenhum dado) com a chave pública — a mesma que está no app.
+# Se o banco não responder, a execução falha. O GitHub avisa por e-mail quem mexeu no agendamento por último
+# (a conta marcoscesari18-design), se os avisos de Actions estiverem ligados em github.com/settings/notifications.
+# O Supabase também manda e-mail ao dono do projeto uma semana antes de pausar.
+# Atenção: o GitHub desliga agendamentos de repositório público depois de 60 dias sem commit;
+# para religar, abra Actions → "Manter o banco acordado" → Enable workflow.
+name: Manter o banco acordado
+on:
+  schedule:
+    - cron: '17 11,17,23 * * *'   # 8h17, 14h17 e 20h17 em Brasília
+  workflow_dispatch:
+permissions: {}
+jobs:
+  cutucar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Bater na porta do banco
+        env:
+          URL: https://emxeeiixrnizpimeyqqw.supabase.co
+          CHAVE: sb_publishable_liW3jmGhKrN2eJD-F-ou3w_k52udLXX   # pública por natureza (está no app); a proteção é o RLS
+        run: |
+          codigo=$(curl -s -o resposta.txt -w '%{http_code}' --max-time 60 -X POST \
+            -H "apikey: $CHAVE" -H "Content-Type: application/json" -d '{}' "$URL/rest/v1/rpc/ping")
+          echo "HTTP $codigo"; head -c 300 resposta.txt; echo
+          if [ "$codigo" = "200" ] && grep -q '"ok"' resposta.txt; then
+            echo "Banco acordado."
+          else
+            echo "::error::O banco não respondeu (HTTP $codigo). Abra o painel do Supabase; se estiver pausado, clique em Resume project."
+            exit 1
+          fi
