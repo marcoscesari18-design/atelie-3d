@@ -3,13 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test \"tests/**/*.test.mjs\""
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "test:banco": "docker exec -i supabase_db_atelie-3d psql -U postgres -v ON_ERROR_STOP=1 -q < supabase/schema.sql > /dev/null && docker exec -i supabase_db_atelie-3d psql -U postgres -v ON_ERROR_STOP=1 < supabase/testes.sql 2>&1 | grep -E '^[0-9]+\\.|PASSARAM|FALHOU|ERROR' && bash supabase/concorrencia.sh"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
     "@xmldom/xmldom": "0.8.10",
-    "jszip": "3.10.1"
+    "jszip": "3.10.1",
+    "supabase": "2.40.7"
   }
 }
