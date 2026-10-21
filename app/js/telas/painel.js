@@ -7,7 +7,7 @@ import { valorEstoque, porGrupo, rolosAcabando, vendasPorSemana, orcamentosParad
 import { carretel } from './filamentos.js';
 
 const SEMANAS = 8;
-const COR = { pedro: '#c07c42', b2b: '#5f93e0' };   // validadas (daltonismo e contraste) contra o fundo do cartão
+const COR = { pedro: '#d9792f', b2b: '#3f74d1' };   // laranja x azul (seguro para daltonismo), contraste ≥ 3:1 sobre o cartão claro
 const kg = (g) => `${(g / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`;
 const diaMes = (iso) => { const [, m, d] = iso.split('-'); return `${d}/${m}`; };
 
