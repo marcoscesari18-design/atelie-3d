@@ -778,18 +778,18 @@ create policy gravar on public.config for insert to authenticated with check ((s
 drop policy if exists alterar on public.config;
 create policy alterar on public.config for update to authenticated using ((select private.eh_marcos())) with check ((select private.eh_marcos()));
 
--- orçamentos: editar/apagar só enquanto rascunho/enviado (apagar só rascunho)
+-- orçamentos: editar/apagar só enquanto rascunho/enviado (apagar só rascunho); B2B só o Marcos
 drop policy if exists ler on public.orcamentos;
 create policy ler on public.orcamentos for select to authenticated using ((select private.eh_membro()));
 drop policy if exists criar on public.orcamentos;
 create policy criar on public.orcamentos for insert to authenticated with check ((select private.eh_membro()));
 drop policy if exists editar on public.orcamentos;
 create policy editar on public.orcamentos for update to authenticated
-  using ((select private.eh_membro()) and status in ('rascunho','enviado'))
-  with check ((select private.eh_membro()) and status in ('rascunho','enviado'));
+  using ((select private.eh_membro()) and status in ('rascunho','enviado') and (linha <> 'b2b' or (select private.eh_marcos())))
+  with check ((select private.eh_membro()) and status in ('rascunho','enviado') and (linha <> 'b2b' or (select private.eh_marcos())));
 drop policy if exists apagar on public.orcamentos;
 create policy apagar on public.orcamentos for delete to authenticated
-  using ((select private.eh_membro()) and status = 'rascunho');
+  using ((select private.eh_membro()) and status = 'rascunho' and (linha <> 'b2b' or (select private.eh_marcos())));
 
 -- filhos do orçamento: só mexe se o orçamento ainda é editável
 create or replace function private.orcamento_editavel(p_orcamento uuid)

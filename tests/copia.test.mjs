@@ -88,3 +88,8 @@ test('restauração: ordem das chaves, gatilhos desligados, tudo ou nada e confe
   assert.match(sql, /\$copiax\$\[\{"id":"v1","obs":"texto com \$copia\$ dentro"\}\]\$copiax\$::jsonb/);
   assert.throws(() => sqlDeRestauracao({ perfis: [] }), /não tem dados\/config\.json/);
 });
+
+test('paraCsv: texto que vira fórmula no Excel é desarmado; número negativo continua número', () => {
+  const csv = paraCsv([{ cliente: '=HYPERLINK("http://x")', obs: '+5', a: '@soma', b: '-2', valor: -3.5 }]);
+  assert.equal(csv, '﻿cliente;obs;a;b;valor\r\n"\'=HYPERLINK(""http://x"")";\'+5;\'@soma;\'-2;-3,5\r\n');
+});

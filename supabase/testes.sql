@@ -707,6 +707,8 @@ begin
   begin perform public.aprovar_orcamento(o, 10); raise exception 'FALHOU: Pedro aprovou B2B';
   exception when insufficient_privilege then null; end;
   perform testes.igual((select status from public.orcamentos where id = o), 'rascunho', 'B2B continua rascunho');
+  delete from public.orcamentos where id = o;   -- RLS: some em silêncio (0 linhas), sem erro
+  perform testes.igual((select count(*)::int from public.orcamentos where id = o), 1, 'Pedro não apaga rascunho B2B');
   perform testes.igual(testes.saldo(a), 1000::numeric, 'estoque intacto');
 end $$;
 rollback;

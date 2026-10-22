@@ -10,7 +10,9 @@ const celula = (v) => {
   if (v === null || v === undefined) return '';
   if (typeof v === 'boolean') return v ? 'sim' : 'não';
   if (typeof v === 'number') return String(v).replace('.', ',');
-  const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+  let s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+  // texto que começa com = + - @ vira fórmula no Excel (ex.: um nome de cliente "=HYPERLINK(...)"): o ' desarma
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
