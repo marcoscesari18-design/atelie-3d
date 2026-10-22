@@ -1,5 +1,6 @@
 // 🧾 Orçamentos — sobe o .3mf, confere rolos, define preço, gera PDF e aprova.
 // Aprovar = vira venda + tarefas na Semana e as gramas saem do estoque (no banco, numa transação).
+import { paginar } from '../paginar.js';
 import { h, limpar, vazio, erroTela, avisar, dialogo, campo, confirmar, botao, corBolinha } from '../ui.js';
 import { brl, gramas, duracao, numeroOrc, hojeISO, dataBrasilia } from '../formato.js';
 import { ler3mf, Erro3mf } from '../le3mf.js';
@@ -11,6 +12,7 @@ const STATUS = { rascunho: ['Rascunho', ''], enviado: ['Enviado', 'acento'], apr
 const EDITAVEL = ['rascunho', 'enviado'];
 const SELECT_ORC = '*, orcamento_itens(*, orcamento_impressoes(*, orcamento_item_placas(*, orcamento_placa_filamentos(*))))';
 let filtro = 'abertos';
+const LIMITE_HISTORICO = 100;
 
 const chave = (id) => `atelie:orc:${id || 'novo'}`;
 const lerLocal = (id) => { try { return JSON.parse(localStorage.getItem(chave(id))); } catch { return null; } };
@@ -27,11 +29,18 @@ export async function render(tela, ctx) {
 // ---------------------------------------------------------------- lista
 async function lista(tela, ctx) {
   const marcos = ctx.perfil.papel === 'marcos';
-  const r = await ctx.db.listar('orcamentos', (q) => {
-    let c = q.select('id, numero, cliente, status, linha, total_aceito, frete, frete_cliente, created_at, orcamento_itens(preco_total)').order('numero', { ascending: false }).limit(100);
+  const consulta = (q) => {
+    let c = q.select('id, numero, cliente, status, linha, total_aceito, frete, frete_cliente, created_at, orcamento_itens(preco_total)').order('numero', { ascending: false });
     if (!marcos) c = c.eq('linha', 'pedro');
-    return c;
-  });
+    // o filtro vai ao banco: um aberto antigo nunca some atrás de 100 mais novos; só o histórico tem teto
+    if (filtro === 'abertos') return c.in('status', EDITAVEL);
+    if (filtro === 'aprovado') c = c.eq('status', 'aprovado');
+    return c.limit(LIMITE_HISTORICO);
+  };
+  // abertos: todos, página a página (nenhum some); histórico: só os 100 mais recentes
+  const r = filtro === 'abertos'
+    ? await paginar((de, ate) => ctx.db.listar('orcamentos', (q) => consulta(q).range(de, ate)))
+    : await ctx.db.listar('orcamentos', consulta);
   if (r.erro) { tela.append(erroTela(r.erro, ctx.atualizar)); return; }
   const novoBtn = h('a', { class: 'btn btn-primario', href: '#orcamentos/novo' }, '+ Novo');
   tela.append(h('div', { class: 'cabeca' }, h('div', {}, h('h1', {}, 'Orçamentos'),
@@ -43,7 +52,7 @@ async function lista(tela, ctx) {
   tela.append(seg);
 
   const locais = lerLocal(null);
-  const itens = r.dados.filter((o) => filtro === 'todos' || (filtro === 'abertos' ? EDITAVEL.includes(o.status) : o.status === filtro));
+  const itens = r.dados;
   const listaEl = h('div', { class: 'lista', style: { marginTop: '12px' } });
   if (locais && filtro !== 'aprovado') {
     listaEl.append(h('a', { class: 'item', href: '#orcamentos/novo' },
@@ -58,6 +67,9 @@ async function lista(tela, ctx) {
         h('div', { class: 'meta' }, numeroOrc(o.numero), ' · ', new Date(o.created_at).toLocaleDateString('pt-BR'),
           o.linha === 'b2b' ? h('span', { class: 'chip b2b', style: { marginLeft: '6px' } }, 'B2B') : null)),
       h('div', { class: 'valor' }, h('div', {}, brl(total)), chipStatus(o.status))));
+  }
+  if (filtro !== 'abertos' && itens.length >= LIMITE_HISTORICO) {
+    listaEl.append(h('p', { class: 'meta nota' }, `Mostrando os ${LIMITE_HISTORICO} mais recentes.`));
   }
   if (!itens.length && !locais) listaEl.append(vazio(filtro === 'abertos' ? 'Nenhum orçamento aberto.' : 'Nada por aqui.', filtro === 'abertos' ? h('a', { class: 'btn btn-primario', href: '#orcamentos/novo' }, 'Fazer o primeiro orçamento') : null));
   tela.append(listaEl);

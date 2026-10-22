@@ -1,7 +1,8 @@
 // ⚙️ Ajustes (só Marcos) — parâmetros da calculadora, marca do PDF, taxas de marketplace
 // e a calculadora livre (simular sem salvar), com Shopee / ML Clássico / ML Premium.
 import { h, limpar, erroTela, avisar, campo, botao } from '../ui.js';
-import { brl } from '../formato.js';
+import { brl, hojeISO } from '../formato.js';
+import { gerarCopia } from '../copia.js';
 import { calcularPlaca, arredondar } from '../calc.js';
 import { precoMarketplace, precoDireto } from '../marketplace.js';
 
@@ -95,6 +96,9 @@ export async function render(tela, ctx) {
       await gravar(ctx, 'marca', nova);
     }, 'btn'))));
 
+  // ---------- cópia de segurança ----------
+  colB.append(h('p', { class: 'secao' }, 'Cópia de segurança'), cartaoCopia(ctx.db));
+
   // ---------- quem usa ----------
   colB.append(h('p', { class: 'secao' }, 'Quem usa o app'), h('div', { class: 'card' },
     perfis.dados.map((p) => h('div', { class: 'linha-dado' }, h('span', {}, p.nome), h('span', { class: 'chip' }, p.papel === 'marcos' ? 'vê tudo' : 'sem custos e sem B2B'))),
@@ -176,4 +180,36 @@ function calculadoraLivre(d, conf, rolos) {
   atualizar();
   return h('div', { class: 'card' }, h('div', { class: 'grade-2' }, campo('Filamento (g)', g), campo('Extras (R$)', ext), campo('Horas', hh), campo('Minutos', mm)),
     campo('Rolo', rolo), saida, blocoFrete, resultado);
+}
+
+// O plano grátis do Supabase não guarda backup: o Marcos baixa tudo num .zip e guarda no computador ou no Drive.
+const CHAVE_ULTIMA = 'atelie3d.ultimaCopia';
+function cartaoCopia(db) {
+  let ultima = null;
+  try { ultima = localStorage.getItem(CHAVE_ULTIMA); } catch { /* navegador sem armazenamento: só não mostra a data */ }
+  const dias = ultima ? Math.floor((Date.now() - new Date(ultima)) / 86400000) : null;
+  const quando = h('p', { class: dias !== null && dias < 8 ? 'meta' : 'aviso' },
+    ultima ? `Última cópia neste aparelho: ${new Date(ultima).toLocaleDateString('pt-BR')}${dias >= 8 ? ` (há ${dias} dias)` : ''}.`
+      : 'Nenhuma cópia feita neste aparelho ainda.');
+  const progresso = h('p', { class: 'meta', 'aria-live': 'polite', style: { margin: '8px 0 0' } });
+  return h('div', { class: 'card' },
+    h('p', { style: { marginTop: '0' } }, 'O plano grátis do banco não guarda cópia. Baixe uma por semana e guarde no computador ou no Google Drive — nunca no GitHub.'),
+    quando,
+    h('div', { class: 'acoes' }, botao('Baixar cópia de tudo', async () => {
+      if (!window.JSZip) return avisar('A ferramenta de compactar ainda está carregando. Tente de novo em alguns segundos.', 'erro');
+      const r = await gerarCopia(db, window.JSZip, hojeISO(), (t) => { progresso.textContent = t; });
+      if (r.erro) { progresso.textContent = ''; return avisar(`A cópia não foi feita: ${r.erro}`, 'erro'); }
+      const url = URL.createObjectURL(r.blob);
+      const a = h('a', { href: url, download: r.nome });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      try { localStorage.setItem(CHAVE_ULTIMA, new Date().toISOString()); } catch { /* sem armazenamento */ }
+      const linhas = r.contagem.filter(([t]) => t !== 'fotos').reduce((s, [, n]) => s + n, 0);
+      const fotos = r.contagem.find(([t]) => t === 'fotos')[1];
+      progresso.textContent = `Pronto: ${r.nome} (${linhas} registros e ${fotos} foto${fotos === 1 ? '' : 's'}).`;
+      quando.className = 'meta';
+      quando.textContent = `Última cópia neste aparelho: ${new Date().toLocaleDateString('pt-BR')}.`;
+      avisar('Cópia baixada ✓');
+    }, 'btn btn-primario')),
+    progresso);
 }

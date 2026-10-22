@@ -354,11 +354,12 @@ create trigger trg_tarefa_status before update on public.tarefas
 -- ---------------------------------------------------------------------
 create or replace function public.marcar_orcamento(p_id uuid, p_status text)
 returns void language plpgsql security definer set search_path = '' as $$
-declare v_atual text;
+declare v_atual text; v_linha text;
 begin
   perform private.exigir_membro();
-  select status into v_atual from public.orcamentos where id = p_id for update;
+  select status, linha into v_atual, v_linha from public.orcamentos where id = p_id for update;
   if v_atual is null then raise exception 'orçamento não encontrado' using errcode = 'P0002'; end if;
+  if v_linha = 'b2b' and not private.eh_marcos() then raise exception 'só o Marcos mexe em orçamento B2B' using errcode = '42501'; end if;
   if not ((v_atual = 'rascunho' and p_status in ('enviado','recusado'))
        or (v_atual = 'enviado'  and p_status in ('recusado','rascunho'))) then
     raise exception 'não dá para passar de % para %', v_atual, p_status using errcode = 'P0001';
@@ -389,6 +390,7 @@ begin
   perform private.exigir_membro();
   select * into o from public.orcamentos where id = p_id for update;
   if o.id is null then raise exception 'orçamento não encontrado' using errcode = 'P0002'; end if;
+  if o.linha = 'b2b' and not private.eh_marcos() then raise exception 'só o Marcos mexe em orçamento B2B' using errcode = '42501'; end if;
   if o.status not in ('rascunho','enviado') then
     raise exception 'esse orçamento já foi %', o.status using errcode = 'P0001';
   end if;
@@ -575,6 +577,29 @@ begin
 end $$;
 
 -- grava o orçamento inteiro (cabeçalho + itens + impressões + placas + cores) numa transação só
+-- Cópia de segurança (botão em Ajustes): todas as tabelas num comando só, então todas vêm do mesmo instante
+-- (um item nunca aparece sem o orçamento dele). Só o Marcos; o plano grátis do Supabase não guarda backup.
+create or replace function public.exportar_tudo()
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not private.eh_marcos() then raise exception 'só o Marcos baixa a cópia de tudo' using errcode = '42501'; end if;
+  return jsonb_build_object(
+    'perfis', (select coalesce(jsonb_agg(to_jsonb(t) order by t.user_id), '[]'::jsonb) from public.perfis t),
+    'config', (select coalesce(jsonb_agg(to_jsonb(t) order by t.chave), '[]'::jsonb) from public.config t),
+    'filamentos', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb) from public.filamentos t),
+    'produtos', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb) from public.produtos t),
+    'orcamentos', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb) from public.orcamentos t),
+    'orcamento_itens', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb) from public.orcamento_itens t),
+    'orcamento_impressoes', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb) from public.orcamento_impressoes t),
+    'orcamento_item_placas', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb) from public.orcamento_item_placas t),
+    'orcamento_placa_filamentos', (select coalesce(jsonb_agg(to_jsonb(t) order by t.placa_id, t.filamento_id), '[]'::jsonb) from public.orcamento_placa_filamentos t),
+    'tarefas', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb) from public.tarefas t),
+    'tarefa_filamentos', (select coalesce(jsonb_agg(to_jsonb(t) order by t.tarefa_id, t.filamento_id), '[]'::jsonb) from public.tarefa_filamentos t),
+    'movimentos_estoque', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb) from public.movimentos_estoque t),
+    'vendas', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb) from public.vendas t)
+  );
+end $$;
+
 -- Batida na porta do lembrete "manter o banco acordado" (GitHub Actions): responde 'ok' sem ler nenhum dado.
 -- É a única função liberada sem login; existe só para o plano grátis não pausar o banco por falta de uso.
 create or replace function public.ping()
@@ -706,7 +731,7 @@ grant select on public.v_resumo_mes, public.v_semana_pedro to authenticated;
 grant execute on function public.salvar_orcamento(uuid, jsonb), public.marcar_orcamento(uuid, text), public.aprovar_orcamento(uuid, numeric),
   public.reimprimir_tarefa(uuid), public.cancelar_orcamento(uuid),
   public.ajustar_estoque(uuid, numeric, text), public.entrada_rolo(uuid, numeric),
-  public.corrigir_cor_rolo(uuid, text) to authenticated;
+  public.corrigir_cor_rolo(uuid, text), public.exportar_tudo() to authenticated;
 grant execute on function public.ping() to anon, authenticated;
 
 -- ---------------------------------------------------------------------

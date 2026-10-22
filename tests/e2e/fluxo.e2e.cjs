@@ -1,11 +1,11 @@
-// Ponta a ponta no tamanho de celular (375×812), contra o Supabase LOCAL e o app em http://127.0.0.1:5180.
+// Ponta a ponta no tamanho de celular (375×812), contra o Supabase LOCAL e o app em http://127.0.0.1:5181 (ou APP_URL).
 // Uso: node tests/e2e/fluxo.e2e.cjs <pasta-com-.3mf>     (Playwright de ~/Downloads/playwright-automacao, Chrome instalado)
 // Termina com "E2E OK" ou sai com código 1.
 const { chromium } = require(process.env.PLAYWRIGHT || '/Users/marcoscesari/Downloads/playwright-automacao/node_modules/playwright');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
-const APP = process.env.APP_URL || 'http://127.0.0.1:5180/';
+const APP = process.env.APP_URL || 'http://127.0.0.1:5181/';
 const FIX = process.argv[2];
 const SENHA = 'atelie-local-123'; // logins de teste do supabase/seed-local.sh (só valem no Supabase local)
 const sql = (q) => execFileSync('docker', ['exec', '-i', 'supabase_db_atelie-3d', 'psql', '-U', 'postgres', '-qtA'], { input: q }).toString().trim();

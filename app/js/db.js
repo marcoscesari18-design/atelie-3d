@@ -68,3 +68,26 @@ export async function enviarFoto(blob) {
   const r = await seguro(() => cliente.storage.from('fotos').upload(caminho, blob, { contentType: blob.type || 'image/png' }));
   return r.erro ? r : { dados: caminho, erro: null };
 }
+
+// todos os caminhos do bucket de fotos (pastas por mês: 2026-10/uuid.png) — para a cópia de segurança
+export async function listarFotos() {
+  const pasta = async (prefixo) => {
+    const itens = [];
+    for (let offset = 0; ; offset += 1000) {
+      const r = await seguro(() => cliente.storage.from('fotos').list(prefixo, { limit: 1000, offset, sortBy: { column: 'name', order: 'asc' } }));
+      if (r.erro) return r;
+      itens.push(...r.dados);
+      if (r.dados.length < 1000) return { dados: itens, erro: null };
+    }
+  };
+  const raiz = await pasta('');
+  if (raiz.erro) return raiz;
+  const caminhos = [];
+  for (const e of raiz.dados) {
+    if (e.id) { caminhos.push(e.name); continue; }          // arquivo solto na raiz
+    const sub = await pasta(e.name);                          // pasta do mês
+    if (sub.erro) return sub;
+    caminhos.push(...sub.dados.filter((f) => f.id).map((f) => `${e.name}/${f.name}`));
+  }
+  return { dados: caminhos, erro: null };
+}

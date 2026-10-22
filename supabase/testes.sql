@@ -693,6 +693,65 @@ begin
 end $$;
 rollback;
 
+\echo '37. Pedro não aprova nem muda o estado de orçamento B2B (só o Marcos)'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Azul'); o uuid; i uuid;
+begin
+  o := testes.orcamento(); perform testes.linha(o, 'b2b'); i := testes.item(o, 1, 10, 4);
+  perform testes.impressao(i, 1, 1, array[a], array[5]);
+  begin perform public.marcar_orcamento(o, 'recusado'); raise exception 'FALHOU: Pedro recusou B2B';
+  exception when insufficient_privilege then null; end;
+  begin perform public.marcar_orcamento(o, 'enviado'); raise exception 'FALHOU: Pedro enviou B2B';
+  exception when insufficient_privilege then null; end;
+  begin perform public.aprovar_orcamento(o, 10); raise exception 'FALHOU: Pedro aprovou B2B';
+  exception when insufficient_privilege then null; end;
+  perform testes.igual((select status from public.orcamentos where id = o), 'rascunho', 'B2B continua rascunho');
+  perform testes.igual(testes.saldo(a), 1000::numeric, 'estoque intacto');
+end $$;
+rollback;
+begin; select testes.como('00000000-0000-0000-0000-00000000000a'); set local role authenticated;
+do $$
+declare a uuid := testes.rolo('Azul'); o uuid; i uuid;
+begin
+  o := testes.orcamento(); perform testes.linha(o, 'b2b'); i := testes.item(o, 1, 10, 4);
+  perform testes.impressao(i, 1, 1, array[a], array[5]);
+  perform public.marcar_orcamento(o, 'enviado');
+  perform public.aprovar_orcamento(o, 10);
+  perform testes.igual((select status from public.orcamentos where id = o), 'aprovado', 'Marcos aprova B2B');
+end $$;
+rollback;
+
+\echo '38. cópia de segurança: só o Marcos exporta, numa leitura só, com todas as tabelas'
+begin; select testes.como('00000000-0000-0000-0000-00000000000b'); set local role authenticated;
+do $$
+begin
+  begin perform public.exportar_tudo(); raise exception 'FALHOU: Pedro exportou tudo';
+  exception when insufficient_privilege then null; end;
+end $$;
+rollback;
+begin; set local role anon;
+do $$
+begin
+  begin perform public.exportar_tudo(); raise exception 'FALHOU: anon exportou tudo';
+  exception when insufficient_privilege then null; end;
+end $$;
+rollback;
+begin; select testes.como('00000000-0000-0000-0000-00000000000a'); set local role authenticated;
+do $$
+declare c jsonb; a uuid := testes.rolo('Verde'); t text;
+begin
+  c := public.exportar_tudo();
+  foreach t in array array['perfis','config','filamentos','produtos','orcamentos','orcamento_itens','orcamento_impressoes',
+    'orcamento_item_placas','orcamento_placa_filamentos','tarefas','tarefa_filamentos','movimentos_estoque','vendas'] loop
+    if jsonb_typeof(c -> t) <> 'array' then raise exception 'FALHOU: cópia sem a tabela %', t; end if;
+  end loop;
+  perform testes.igual(jsonb_array_length(c -> 'filamentos'), (select count(*)::int from public.filamentos), 'todos os rolos');
+  perform testes.igual(jsonb_array_length(c -> 'movimentos_estoque'), (select count(*)::int from public.movimentos_estoque), 'todos os movimentos');
+  perform testes.igual((select count(*)::int from jsonb_array_elements(c -> 'filamentos') e where e ->> 'id' = a::text), 1, 'rolo novo na cópia');
+end $$;
+rollback;
+
 -- ---------- limpeza ----------
 delete from public.perfis where user_id in ('00000000-0000-0000-0000-00000000000a','00000000-0000-0000-0000-00000000000b');
 delete from auth.users where id in ('00000000-0000-0000-0000-00000000000a','00000000-0000-0000-0000-00000000000b','00000000-0000-0000-0000-00000000000c');

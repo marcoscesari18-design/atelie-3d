@@ -11,13 +11,14 @@
   --sup: rgba(255, 255, 255, .72);   /* fundo de campos */
   --card: rgba(255, 255, 255, .52);
   --card-2: rgba(255, 255, 255, .8); /* hover */
+  --item: rgba(255, 255, 255, .66);  /* linhas de lista: sem desfoque, um pouco mais opacas */
   --solido: #f7f8fa;        /* onde precisa de cor opaca (flange do carretel, miolo) */
   --linha: rgba(29, 36, 51, .14);
   --linha-suave: rgba(29, 36, 51, .08);
   --borda-vidro: rgba(255, 255, 255, .75);
   --txt: #1d2433;
   --dim: #5b6475;
-  --fraco: #7d8696;
+  --fraco: #646c7b;         /* ≥ 4,5:1 no branco e na névoa: é usado em texto pequeno */
   --acento: #1d2433;        /* ação principal, aba atual, foco: grafite */
   --acento-txt: #ffffff;
   --acento-fundo: rgba(29, 36, 51, .07);
@@ -60,11 +61,13 @@ h1, h2, .marca, .grande { font-stretch: 106%; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 /* sem suporte a desfoque: vidro vira branco quase opaco, para o texto continuar legível */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root { --card: rgba(255, 255, 255, .9); --painel: rgba(255, 255, 255, .94); }
+  :root { --card: rgba(255, 255, 255, .9); --item: rgba(255, 255, 255, .9); --painel: rgba(255, 255, 255, .94); }
 }
 
-/* ---------- vidro ---------- */
-.card, .item, .kpi, .rolo, .acoes-fixas, .dialogo, .toast, .abas {
+/* ---------- vidro ----------
+   Desfoque só no que aparece poucas vezes por tela. Linhas de lista (.item, .rolo — até 64 rolos) ficam sem
+   backdrop-filter: dezenas de camadas desfocadas travam a rolagem em celular simples. */
+.card, .kpi, .acoes-fixas, .dialogo, .toast, .abas {
   -webkit-backdrop-filter: var(--vidro); backdrop-filter: var(--vidro); }
 
 /* ---------- casca: celular ---------- */
@@ -123,7 +126,7 @@ h1, h2, .marca, .grande { font-stretch: 106%; }
 .card + .card { margin-top: 10px; }
 .lista { display: flex; flex-direction: column; gap: 8px; }
 .lista .card + .card { margin-top: 0; }
-.item { display: flex; gap: 12px; align-items: center; background: var(--card); border: 1px solid var(--borda-vidro); box-shadow: var(--sombra-vidro);
+.item { display: flex; gap: 12px; align-items: center; background: var(--item); border: 1px solid var(--borda-vidro); box-shadow: var(--sombra-vidro);
   border-radius: var(--raio-item); padding: 12px 14px; min-height: 60px; color: inherit; text-decoration: none; transition: background-color .15s; }
 button.item { width: 100%; text-align: left; cursor: pointer; }
 .item:hover { background: var(--card-2); }
@@ -189,7 +192,7 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
 .campo textarea { resize: vertical; }
 .grade-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 12px; }
 .segmentado { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px; border-radius: 16px; background: rgba(29, 36, 51, .06); }
-.segmentado button { flex: 1; min-height: 40px; padding: 0 12px; border-radius: 12px; border: 0; background: transparent; cursor: pointer; font-weight: 500; color: var(--dim); }
+.segmentado button { flex: 1; min-height: 44px; padding: 0 12px; border-radius: 12px; border: 0; background: transparent; cursor: pointer; font-weight: 500; color: var(--dim); }
 .segmentado button:hover { color: var(--txt); background: rgba(255, 255, 255, .45); }
 .segmentado button[aria-pressed=true] { color: var(--txt); font-weight: 600; background: #fff; box-shadow: 0 1px 3px rgba(38, 50, 78, .14), 0 0 0 .5px rgba(38, 50, 78, .06); }
 .segmentado.canais { display: grid; grid-template-columns: 1fr 1fr; }
@@ -271,7 +274,7 @@ button.item { width: 100%; text-align: left; cursor: pointer; }
 /* celular: uma linha por rolo (38 rolos cabem em poucas telas); computador: grade */
 .grade-rolos { display: flex; flex-direction: column; gap: 6px; }
 .rolo { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; text-align: left;
-  padding: 10px 12px; min-height: 64px; cursor: pointer; background: var(--card); border: 1px solid var(--borda-vidro); border-radius: var(--raio-item); color: inherit;
+  padding: 10px 12px; min-height: 64px; cursor: pointer; background: var(--item); border: 1px solid var(--borda-vidro); border-radius: var(--raio-item); color: inherit;
   box-shadow: var(--sombra-vidro); transition: background-color .15s; }
 .rolo:hover { background: var(--card-2); }
 .rolo.arquivado { opacity: .5; }
